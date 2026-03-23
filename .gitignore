@@ -7,3 +7,4 @@ dist/
 data/bookings.json
 .mypy_cache/
 .pytest_cache/
+docs/
