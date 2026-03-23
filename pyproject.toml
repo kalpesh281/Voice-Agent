@@ -1,0 +1,24 @@
+[tool.poetry]
+name = "voice-agent-hotel-booking"
+version = "0.1.0"
+description = "5-star Indian hotel room booking voice agent"
+authors = ["Kalpesh"]
+packages = [{include = "agent"}]
+
+[tool.poetry.dependencies]
+python = "^3.11"
+openai = ">=1.0"
+rich = "^13.0"
+python-dotenv = "^1.0"
+aiofiles = ">=24.0"
+sounddevice = "^0.5"
+numpy = "^2.0"
+soundfile = "^0.13"
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^8.0"
+pytest-asyncio = "^0.23"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
