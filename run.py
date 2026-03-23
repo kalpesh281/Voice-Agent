@@ -29,8 +29,8 @@ from agent.config import (
     LLM_TEMPERATURE_CONVERSATION, MIC_SAMPLE_RATE,
     ENERGY_THRESHOLD, SILENCE_DURATION, MIN_SPEECH_DURATION,
 )
-from tools.definitions import TOOLS
-from tools.executor import execute_tool
+from categories.hotel.tools.definitions import TOOLS
+from categories.hotel.tools.executor import execute_tool
 
 load_dotenv()
 

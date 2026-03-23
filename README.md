@@ -1,130 +1,117 @@
-# The Grand Meridian Palace — Voice Booking Agent
+# Voice Booking Agent
 
-A real-time voice AI agent for hotel room booking. Talk to **Aria**, the virtual concierge at a 5-star luxury hotel in Mumbai, India. She speaks, you speak — like a real phone call.
+A real-time voice AI agent platform for booking services. Built with OpenAI (LLM + TTS + STT), designed for natural two-way phone-like conversations.
 
-## Features
+Currently live: **Hotel Room Booking** (The Grand Meridian Palace, Mumbai)
 
-- **Real-time two-way voice** — always-on mic, auto-detects speech, no buttons
-- **Interrupt anytime** — speak while Aria is talking and she stops
-- **Natural conversation** — warm Indian hospitality, not robotic
-- **5 booking tools** — search rooms, check availability, create booking, get details
-- **13 hotel rooms** — mixed availability, INR pricing, 5 room types, 5 views
-- **Token payment flow** — 20% advance with UPI / card / bank transfer
-- **Live waveform** — visual audio bars in the terminal
-- **Beautiful CLI** — Rich-powered panels, color-coded speakers
+Upcoming categories: Food Order, Table Booking, Turf/Pickleball, E-commerce, and more.
 
-## Tech Stack
+## How It Works
 
-| Component | Technology |
-|-----------|-----------|
-| LLM | OpenAI GPT-4o-mini |
-| TTS | OpenAI gpt-4o-mini-tts (Nova voice) |
-| STT | OpenAI Whisper |
-| Audio | sounddevice + soundfile |
-| CLI | Rich |
-| Data | JSON (rooms + bookings) |
-| Package Manager | Poetry |
+1. You run the agent
+2. Agent greets you — speaks through your speakers
+3. You talk naturally through your mic — no buttons, no typing
+4. Agent listens, thinks, responds — like a real phone call
+5. You can interrupt anytime — agent stops and listens
+6. Booking gets saved to JSON with a reference ID
 
 ## Quick Start
 
 ```bash
-# 1. Install dependencies
 poetry install
-
-# 2. Set up your OpenAI API key
-cp .env.example .env
-# Edit .env and add your OPENAI_API_KEY
-
-# 3. Run the voice agent
-poetry run python run.py
+cp .env.example .env       # Add your OPENAI_API_KEY
+poetry run python run.py   # Start talking
 ```
-
-That's it. Aria greets you, you talk back. No Docker, no browser needed.
 
 ## Project Structure
 
 ```
 Agent/
-├── agent/                      # Core agent module
-│   ├── config.py              # All settings: models, voice, prompts, constants
-│   ├── hotel_agent.py         # HotelAgent class (LiveKit mode)
-│   ├── main.py                # LiveKit entrypoint
-│   ├── room_service.py        # Room data: load, search, filter, format
-│   ├── booking_store.py       # Booking persistence (async JSON)
-│   └── cli.py                 # Console logging helpers
-├── tools/                      # Shared tool layer
-│   ├── definitions.py         # OpenAI function tool schemas (5 tools)
-│   └── executor.py            # Tool execution (routes to services)
-├── tests/                      # 31 tests
-│   ├── test_room_service.py   # Room search, filter, format tests
-│   ├── test_booking_store.py  # Booking save, load, ID generation tests
-│   └── test_tools.py          # Tool execution tests
-├── data/
-│   ├── rooms.json             # 13 rooms (9 available, 4 booked)
-│   └── bookings.json          # Saved bookings (created at runtime)
-├── run.py                     # Standalone voice agent (main entry point)
+├── core/                           # Voice engine (shared across all categories)
+│   └── config.py                  # Models, voice, audio, STT/TTS/LLM settings
+│
+├── categories/                     # Booking categories (plug-and-play)
+│   └── hotel/                     # Hotel room booking (active)
+│       ├── config.py              # Hotel-specific: name, prompt, agent persona
+│       ├── tools/
+│       │   ├── definitions.py     # OpenAI function tool schemas
+│       │   └── executor.py        # Tool execution logic
+│       └── data/
+│           └── rooms.json         # Room inventory
+│
+├── agent/                          # Agent module (generic services)
+│   ├── config.py                  # Combines core + active category config
+│   ├── hotel_agent.py             # LiveKit agent class
+│   ├── main.py                    # LiveKit entrypoint
+│   ├── room_service.py            # Room data layer
+│   ├── booking_store.py           # Booking persistence (async JSON)
+│   └── cli.py                     # Console logging
+│
+├── tools/                          # Shared tool definitions (legacy, being migrated)
+├── tests/                          # 30 tests — all passing
+├── data/                           # Runtime data (bookings.json)
+│
+├── run.py                         # Main entry point — standalone voice agent
 ├── pyproject.toml
 ├── Makefile
 └── .env.example
 ```
 
-## Conversation Flow
+## Adding a New Category
+
+To add a new booking category (e.g., food ordering):
 
 ```
-Aria: "Namaste! How can I help you today?"
-You:  "I want to book a room"
-Aria: "We have Deluxe, Suites, Villas, Penthouses..."
-You:  "Show me sea view rooms"
-Aria: [calls search_rooms] "I found the Maharaja Deluxe King..."
-You:  "I'll take it"
-Aria: "May I have your name?" → phone → guests → dates
-Aria: [confirms details] "Token of Rs.11,100. UPI, card, or bank transfer?"
-You:  "UPI"
-Aria: [books] "Confirmed! Reference BK-20260324-001. Namaste!"
+categories/
+└── food/
+    ├── config.py              # Agent name, system prompt, business info
+    ├── tools/
+    │   ├── definitions.py     # Tool schemas (search_menu, place_order, etc.)
+    │   └── executor.py        # Tool execution
+    └── data/
+        └── menu.json          # Menu items
 ```
 
-## Room Types
+Then switch the active category in `agent/config.py`:
 
-| Type | Price Range (INR/night) | Available |
-|------|------------------------|-----------|
-| Superior | 12,500 - 13,500 | Some booked |
-| Deluxe | 15,000 - 21,000 | Most available |
-| Suite | 28,000 - 42,000 | Available |
-| Penthouse | 85,000 - 95,000 | 1 booked, 1 available |
-| Villa | 62,000 - 78,000 | Available |
+```python
+# Change this line:
+from categories.hotel.config import ...
+# To:
+from categories.food.config import ...
+```
 
 ## Configuration
 
-All settings are in `agent/config.py`:
+All voice engine settings in `core/config.py`:
 
 ```python
-LLM_MODEL = "gpt-4o-mini"          # Change LLM here
-TTS_MODEL = "gpt-4o-mini-tts"      # TTS model
-TTS_VOICE = "nova"                  # Voice: nova, shimmer, coral, etc.
-STT_MODEL = "whisper-1"             # Speech-to-text
-TOKEN_PERCENTAGE = 20               # Booking token amount
-ENERGY_THRESHOLD = 500              # Mic sensitivity (lower = more sensitive)
+LLM_MODEL = "gpt-4o-mini"          # Reasoning
+TTS_MODEL = "gpt-4o-mini-tts"      # Speech output
+TTS_VOICE = "nova"                  # Voice style
+STT_MODEL = "whisper-1"             # Speech input
+ENERGY_THRESHOLD = 500              # Mic sensitivity
+TOKEN_PERCENTAGE = 20               # Booking advance payment
 ```
+
+Category-specific settings (prompt, business name, persona) live in `categories/<name>/config.py`.
 
 ## Commands
 
 ```bash
 poetry run python run.py       # Run voice agent
-poetry run pytest tests/ -v    # Run 31 tests
+poetry run pytest tests/ -v    # Run tests (30 tests)
 make install                   # Install dependencies
 make bookings                  # View saved bookings
 ```
 
-## Cost per Conversation
+## Cost
 
-~$0.05 per full booking conversation (greeting to confirmation).
+~$0.05 per full booking conversation.
 
-| Component | Model | Cost |
-|-----------|-------|------|
-| LLM | gpt-4o-mini | ~$0.003 |
-| TTS | gpt-4o-mini-tts | ~$0.036 |
-| STT | whisper-1 | ~$0.009 |
+## Tech
 
-## License
-
-Private project.
+- OpenAI GPT-4o-mini (LLM) + gpt-4o-mini-tts (TTS) + Whisper (STT)
+- Python, Poetry, Rich, sounddevice, soundfile
+- Energy-based VAD for real-time speech detection
+- Async JSON persistence for bookings
