@@ -1,20 +1,15 @@
 #!/usr/bin/env python3
 """
-The Grand Meridian Palace — Voice Booking Agent
+The Grand Meridian Palace — Voice Booking Agent (Real-time Two-Way)
 Run: poetry run python run.py
 
-Aria speaks through your speakers. You speak through your mic.
-Press ENTER to start recording, ENTER again to stop.
-Type 'quit' to exit.
+Talk naturally like a phone call. Interrupt Aria anytime.
+No buttons needed — just speak.
 """
 
-import asyncio
-import io
 import json
-import sys
 import tempfile
-import threading
-import wave
+import time
 from datetime import datetime
 from pathlib import Path
 
@@ -24,405 +19,274 @@ import soundfile as sf
 from dotenv import load_dotenv
 from openai import OpenAI
 from rich.console import Console
+from rich.live import Live
 from rich.panel import Panel
 from rich.text import Text
 
-from agent.booking_store import save_booking, get_booking
-from agent.room_service import (
-    search_rooms,
-    get_room_by_id,
-    format_room_for_speech,
-    format_rooms_summary,
-    get_available_room_types,
-    get_available_views,
+from agent.config import (
+    SYSTEM_PROMPT, TTS_MODEL, TTS_VOICE, TTS_INSTRUCTIONS,
+    STT_MODEL, LLM_MODEL, LLM_TEMPERATURE_GREETING,
+    LLM_TEMPERATURE_CONVERSATION, MIC_SAMPLE_RATE,
+    ENERGY_THRESHOLD, SILENCE_DURATION, MIN_SPEECH_DURATION,
 )
+from tools.definitions import TOOLS
+from tools.executor import execute_tool
 
 load_dotenv()
 
 console = Console()
-TOKEN_PERCENTAGE = 20
-SAMPLE_RATE = 24000
-MIC_SAMPLE_RATE = 16000
 
-# ── System prompt ───────────────────────────────────────────────────────
-
-SYSTEM_PROMPT = """\
-You are Aria, the virtual concierge at The Grand Meridian Palace — a prestigious 5-star luxury hotel \
-located on Marine Drive, Mumbai, India. You speak warmly, naturally, and conversationally — \
-exactly like a real human receptionist on a phone call. You are NOT a robot.
-
-Your personality:
-- Warm, gracious, and genuinely caring — you have the legendary Indian hospitality spirit.
-- You speak like a real person. Use natural fillers: "Oh lovely!", "Sure sure!", "Absolutely!", \
-  "That sounds wonderful.", "Ji, bilkul!", "No worries at all."
-- Speak in flowing sentences. Never bullet points, lists, or markdown.
-- Never use abbreviations, symbols, or emojis — you are speaking aloud on a call.
-- Keep each response to 2-4 sentences max. Short, natural, human.
-- All prices are in Indian Rupees. Always say "rupees" when speaking about money.
-- Address the guest by name once you know it.
-
-===== CONVERSATION FLOW — follow this exactly =====
-
-STEP 1 — GREETING:
-- Greet the caller warmly. Say Namaste.
-- Introduce yourself: "I'm Aria from The Grand Meridian Palace, Mumbai."
-- Ask: "How can I help you today?"
-- Do NOT ask for their name yet. Wait to hear what they need.
-
-STEP 2 — INTENT CHECK:
-- If they ask about hotel rooms, booking, availability, prices → proceed.
-- If UNRELATED → politely say you can only help with hotel room bookings.
-
-STEP 3 — ROOM INFORMATION (short first):
-- Give a SHORT overview of room types and price range.
-- Use search_rooms tool for actual data.
-
-STEP 4 — DETAILED ROOM INFO (only when asked):
-- Use get_room_details for specific room details.
-
-STEP 5 — BOOKING:
-- Collect: name, phone, number of guests, dates — one by one naturally.
-
-STEP 6 — CONFIRM all details back to the guest.
-
-STEP 7 — TOKEN PAYMENT:
-- "Token amount of 20% of total. UPI, credit card, or bank transfer?"
-- If agrees → book. If not → "No problem, call back anytime."
-
-STEP 8 — create_booking, read reference, warm goodbye.
-
-RULES:
-- NEVER make up room data. Always use tools.
-- NEVER book without create_booking.
-- Be HUMAN. React naturally.
-"""
-
-# ── Tool definitions ────────────────────────────────────────────────────
-
-TOOLS = [
-    {
-        "type": "function",
-        "function": {
-            "name": "search_rooms",
-            "description": "Search available hotel rooms by preferences.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "room_type": {"type": "string", "description": "deluxe, superior, suite, penthouse, or villa."},
-                    "view": {"type": "string", "description": "sea, garden, city, pool, or mountain."},
-                    "num_guests": {"type": "integer", "description": "Number of guests."},
-                    "max_price_per_night": {"type": "number", "description": "Max budget per night in rupees."},
-                },
-                "required": [],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "get_room_details",
-            "description": "Get full details about a specific hotel room.",
-            "parameters": {
-                "type": "object",
-                "properties": {"room_id": {"type": "string", "description": "e.g. room-001."}},
-                "required": ["room_id"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "check_availability",
-            "description": "Check room availability for given dates and calculate pricing.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "room_id": {"type": "string"},
-                    "check_in": {"type": "string", "description": "YYYY-MM-DD"},
-                    "check_out": {"type": "string", "description": "YYYY-MM-DD"},
-                },
-                "required": ["room_id", "check_in", "check_out"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "create_booking",
-            "description": "Create a confirmed booking after guest confirms and agrees to token payment.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "room_id": {"type": "string"},
-                    "guest_name": {"type": "string"},
-                    "guest_phone": {"type": "string"},
-                    "check_in": {"type": "string", "description": "YYYY-MM-DD"},
-                    "check_out": {"type": "string", "description": "YYYY-MM-DD"},
-                    "num_guests": {"type": "integer"},
-                    "payment_method": {"type": "string", "description": "UPI, credit card, or bank transfer."},
-                    "special_requests": {"type": "string"},
-                },
-                "required": ["room_id", "guest_name", "guest_phone", "check_in", "check_out", "num_guests"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "get_booking",
-            "description": "Look up an existing booking by reference ID.",
-            "parameters": {
-                "type": "object",
-                "properties": {"booking_id": {"type": "string"}},
-                "required": ["booking_id"],
-            },
-        },
-    },
-]
+WAVE_CHARS = " ░▒▓█"
+WAVE_WIDTH = 60
 
 
-# ── Voice: TTS (Aria speaks) ───────────────────────────────────────────
+# ── Waveform helpers ────────────────────────────────────────────────────
 
-def speak(client: OpenAI, text: str):
-    """Convert text to speech and play through speakers."""
-    ts = datetime.now().strftime("%H:%M:%S")
+def make_waveform_text(audio_chunk: np.ndarray, width: int = WAVE_WIDTH, color: str = "cyan") -> Text:
+    if len(audio_chunk) == 0:
+        text = Text()
+        text.append("░" * width, style="dim blue")
+        return text
 
-    # Show what Aria is saying
-    aria_text = Text()
-    aria_text.append(f"  [{ts}]  ", style="dim")
-    aria_text.append("  ARIA", style="bold cyan")
-    aria_text.append("  >  ", style="dim")
-    aria_text.append(text, style="white")
-    console.print(aria_text)
+    chunk_size = max(1, len(audio_chunk) // width)
+    bars_data = []
+    for i in range(width):
+        start = i * chunk_size
+        end = min(start + chunk_size, len(audio_chunk))
+        if start < len(audio_chunk):
+            amplitude = np.abs(audio_chunk[start:end].astype(np.float32)).mean() / 32768.0
+        else:
+            amplitude = 0
+        bars_data.append(amplitude)
 
-    # Generate speech
+    max_amp = max(bars_data) if max(bars_data) > 0 else 1
+    text = Text()
+    for amp in bars_data:
+        normalized = min(amp / max_amp, 1.0)
+        idx = int(normalized * (len(WAVE_CHARS) - 1))
+        text.append(WAVE_CHARS[idx], style=f"bold {color}")
+    return text
+
+
+def render_status_panel(state: str, message: str = "", wave_text: Text | None = None) -> Panel:
+    content = Text()
+
+    if state == "ARIA_SPEAKING":
+        label = "Aria is speaking..."
+        color = "cyan"
+        border = "cyan"
+        hint = "  Speak anytime to interrupt"
+    elif state == "YOU_SPEAKING":
+        label = "You are speaking..."
+        color = "yellow"
+        border = "yellow"
+        hint = "  Listening..."
+    elif state == "THINKING":
+        label = "Aria is thinking..."
+        color = "magenta"
+        border = "magenta"
+        hint = ""
+    else:
+        label = "Listening..."
+        color = "blue"
+        border = "blue"
+        hint = "  Speak naturally — like a phone call"
+
+    content.append(f"\n  {label}\n\n", style=f"bold {color}")
+
+    if wave_text:
+        content.append("  ")
+        content.append_text(wave_text)
+        content.append("\n")
+    else:
+        content.append("  " + "░" * WAVE_WIDTH + "\n", style="dim blue")
+
+    if message:
+        display_msg = message if len(message) <= 100 else "..." + message[-97:]
+        content.append(f"\n  {display_msg}\n", style=f"dim {color}")
+
+    if hint:
+        content.append(f"\n  {hint}\n", style="dim")
+
+    title_map = {"ARIA_SPEAKING": "ARIA", "YOU_SPEAKING": "YOU", "THINKING": "ARIA", "IDLE": "LIVE"}
+    title = title_map.get(state, "LIVE")
+    return Panel(content, border_style=border, title=f"[bold {border}] {title} [/]", padding=(0, 1))
+
+
+
+# System prompt, tools, and executor imported from agent.config and tools/
+
+
+
+
+# ── Real-time Mic with VAD ──────────────────────────────────────────────
+
+class MicListener:
+    """Always-on microphone with energy-based voice activity detection."""
+
+    def __init__(self):
+        self.recording = []
+        self.is_speaking = False
+        self.silence_start = None
+        self.speech_start = None
+        self.current_energy = 0.0
+        self.current_chunk = np.zeros(1024, dtype=np.int16)
+        self._interrupted = False
+        self._stream = None
+
+    def start(self):
+        self._stream = sd.InputStream(
+            samplerate=MIC_SAMPLE_RATE,
+            channels=1,
+            dtype="int16",
+            callback=self._callback,
+            blocksize=2048,
+        )
+        self._stream.start()
+
+    def stop(self):
+        if self._stream:
+            self._stream.stop()
+            self._stream.close()
+
+    def _callback(self, indata, frames, time_info, status):
+        audio = indata[:, 0]
+        self.current_chunk = audio.copy()
+        energy = np.abs(audio.astype(np.float32)).mean()
+        self.current_energy = energy
+
+        if energy > ENERGY_THRESHOLD:
+            if not self.is_speaking:
+                self.is_speaking = True
+                self.speech_start = time.time()
+                self.recording = []
+            self.silence_start = None
+            self.recording.append(audio.copy())
+        elif self.is_speaking:
+            self.recording.append(audio.copy())
+            if self.silence_start is None:
+                self.silence_start = time.time()
+
+    @property
+    def interrupted(self):
+        return self._interrupted
+
+    @interrupted.setter
+    def interrupted(self, value):
+        self._interrupted = value
+
+    def check_speech_done(self) -> bool:
+        """Returns True if user finished speaking (silence after speech)."""
+        if not self.is_speaking:
+            return False
+        if self.silence_start and (time.time() - self.silence_start) >= SILENCE_DURATION:
+            return True
+        return False
+
+    def get_audio_and_reset(self) -> np.ndarray | None:
+        """Get recorded audio and reset state."""
+        if not self.recording:
+            self.is_speaking = False
+            self.silence_start = None
+            return None
+
+        audio = np.concatenate(self.recording)
+        duration = len(audio) / MIC_SAMPLE_RATE
+
+        self.recording = []
+        self.is_speaking = False
+        self.silence_start = None
+        self.speech_start = None
+
+        if duration < MIN_SPEECH_DURATION:
+            return None
+        return audio
+
+    def is_user_speaking(self) -> bool:
+        return self.current_energy > ENERGY_THRESHOLD
+
+
+# ── TTS with interruption support ──────────────────────────────────────
+
+def speak_with_interrupt(client: OpenAI, text: str, mic: MicListener, live: Live) -> bool:
+    """Speak text. Returns True if interrupted by user."""
     response = client.audio.speech.create(
-        model="gpt-4o-mini-tts",
-        voice="shimmer",
+        model=TTS_MODEL,
+        voice=TTS_VOICE,
         input=text,
-        response_format="pcm",
-        instructions="Speak warmly and clearly like a 5-star Indian hotel concierge. Calm, gracious pace.",
+        response_format="wav",
+        instructions=TTS_INSTRUCTIONS,
     )
 
-    # Play audio
-    audio_data = np.frombuffer(response.content, dtype=np.int16)
+    # Decode WAV for clean audio (no raw PCM artifacts)
+    import io
+    audio_data_raw, wav_sr = sf.read(io.BytesIO(response.content), dtype="int16")
+    audio_data = audio_data_raw if audio_data_raw.ndim == 1 else audio_data_raw[:, 0]
     audio_float = audio_data.astype(np.float32) / 32768.0
-    sd.play(audio_float, samplerate=SAMPLE_RATE)
-    sd.wait()
-    console.print()
 
+    chunk_duration = 0.12
+    chunk_samples = int(wav_sr * chunk_duration)
+    total_chunks = max(1, len(audio_data) // chunk_samples)
 
-# ── Voice: STT (User speaks) ───────────────────────────────────────────
+    sd.play(audio_float, samplerate=wav_sr)
 
-def listen(client: OpenAI) -> str:
-    """Record from mic and transcribe with Whisper."""
+    interrupted = False
+    for i in range(total_chunks + 1):
+        # Check if user started speaking — interrupt!
+        if mic.is_user_speaking():
+            sd.stop()
+            interrupted = True
+            mic.interrupted = True
+            break
+
+        start = i * chunk_samples
+        end = min(start + chunk_samples, len(audio_data))
+        if start >= len(audio_data):
+            break
+
+        chunk = audio_data[start:end]
+        wave = make_waveform_text(chunk, color="cyan")
+        live.update(render_status_panel("ARIA_SPEAKING", text, wave))
+        time.sleep(chunk_duration)
+
+    if not interrupted:
+        sd.wait()
+
+    # Log what Aria said
     ts = datetime.now().strftime("%H:%M:%S")
+    suffix = " [interrupted]" if interrupted else ""
+    log = Text()
+    log.append(f"  [{ts}]  ", style="dim")
+    log.append("  ARIA", style="bold cyan")
+    log.append("  >  ", style="dim")
+    log.append(text + suffix, style="white")
+    console.print(log)
 
-    prompt_text = Text()
-    prompt_text.append(f"  [{ts}]  ", style="dim")
-    prompt_text.append("  MIC ", style="bold yellow")
-    prompt_text.append("  >  ", style="dim")
-    prompt_text.append("Press ENTER to start speaking...", style="dim yellow")
-    console.print(prompt_text, end="")
-    input()
+    return interrupted
 
-    # Start recording
-    recording = []
-    is_recording = True
 
-    def callback(indata, frames, time_info, status):
-        if is_recording:
-            recording.append(indata.copy())
+# ── STT ─────────────────────────────────────────────────────────────────
 
-    stream = sd.InputStream(
-        samplerate=MIC_SAMPLE_RATE,
-        channels=1,
-        dtype="int16",
-        callback=callback,
-    )
-
-    rec_text = Text()
-    rec_text.append(f"  [{ts}]  ", style="dim")
-    rec_text.append("  MIC ", style="bold red")
-    rec_text.append("  >  ", style="dim")
-    rec_text.append("Recording... Press ENTER to stop.", style="bold red")
-    console.print(rec_text, end="")
-
-    stream.start()
-    input()
-    is_recording = False
-    stream.stop()
-    stream.close()
-
-    if not recording:
-        return ""
-
-    # Save to temp wav file
-    audio_data = np.concatenate(recording, axis=0)
+def transcribe(client: OpenAI, audio: np.ndarray) -> str:
     tmp = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
-    sf.write(tmp.name, audio_data, MIC_SAMPLE_RATE)
+    sf.write(tmp.name, audio, MIC_SAMPLE_RATE)
 
-    # Transcribe with Whisper
     with open(tmp.name, "rb") as f:
-        transcription = client.audio.transcriptions.create(
-            model="gpt-4o-transcribe",
+        result = client.audio.transcriptions.create(
+            model=STT_MODEL,
             file=f,
             language="en",
         )
 
     Path(tmp.name).unlink(missing_ok=True)
-
-    text = transcription.text.strip()
-
-    # Show what user said
-    user_text = Text()
-    user_text.append(f"  [{ts}]  ", style="dim")
-    user_text.append("  YOU ", style="bold yellow")
-    user_text.append("  >  ", style="dim")
-    user_text.append(text, style="white")
-    console.print(user_text)
-    console.print()
-
-    return text
+    return result.text.strip()
 
 
-# ── Tool execution ──────────────────────────────────────────────────────
 
-def execute_tool(name: str, args: dict) -> str:
-    ts = datetime.now().strftime("%H:%M:%S")
-
-    tool_text = Text()
-    tool_text.append(f"  [{ts}]  ", style="dim")
-    tool_text.append("   TOOL", style="bold magenta")
-    tool_text.append(f"  {name}(", style="magenta")
-    arg_parts = [f"{k}={v!r}" for k, v in args.items() if v is not None]
-    tool_text.append(", ".join(arg_parts), style="dim magenta")
-    tool_text.append(")", style="magenta")
-    console.print(tool_text)
-
-    if name == "search_rooms":
-        rooms = search_rooms(
-            room_type=args.get("room_type"),
-            view=args.get("view"),
-            min_guests=args.get("num_guests"),
-            max_price=args.get("max_price_per_night"),
-        )
-        if not rooms:
-            result = {
-                "found": 0,
-                "message": "No rooms match those criteria right now.",
-                "available_types": get_available_room_types(),
-                "available_views": get_available_views(),
-            }
-        else:
-            result = {
-                "found": len(rooms),
-                "rooms": [
-                    {
-                        "id": r["id"], "name": r["name"], "type": r["type"],
-                        "bed_type": r["bed_type"], "view": r["view"], "floor": r["floor"],
-                        "max_guests": r["max_guests"], "price_per_night": r["price_per_night"],
-                        "amenities": r["amenities"][:4], "description": r["description"],
-                    }
-                    for r in rooms
-                ],
-                "summary": format_rooms_summary(rooms),
-            }
-
-    elif name == "get_room_details":
-        room = get_room_by_id(args["room_id"])
-        if not room:
-            result = {"error": f"Room {args['room_id']} not found."}
-        else:
-            result = {
-                "room": room,
-                "speech_description": format_room_for_speech(room),
-                "available": room.get("available", False),
-                "status": "available" if room.get("available") else "fully booked",
-            }
-
-    elif name == "check_availability":
-        room = get_room_by_id(args["room_id"])
-        if not room:
-            result = {"error": "Room not found."}
-        elif not room.get("available", False):
-            result = {"available": False, "room_name": room["name"], "message": f"{room['name']} is fully booked."}
-        else:
-            try:
-                d_in = datetime.strptime(args["check_in"], "%Y-%m-%d")
-                d_out = datetime.strptime(args["check_out"], "%Y-%m-%d")
-                nights = (d_out - d_in).days
-                total = room["price_per_night"] * nights
-                token = int(total * TOKEN_PERCENTAGE / 100)
-                result = {
-                    "available": True, "room_name": room["name"],
-                    "price_per_night": room["price_per_night"], "nights": nights,
-                    "total_price": total, "token_amount": token, "currency": "INR",
-                }
-            except Exception as e:
-                result = {"error": str(e)}
-
-    elif name == "create_booking":
-        room = get_room_by_id(args["room_id"])
-        if not room or not room.get("available"):
-            result = {"error": "Room not available."}
-        else:
-            try:
-                d_in = datetime.strptime(args["check_in"], "%Y-%m-%d")
-                d_out = datetime.strptime(args["check_out"], "%Y-%m-%d")
-                nights = (d_out - d_in).days
-                total = room["price_per_night"] * nights
-                token = int(total * TOKEN_PERCENTAGE / 100)
-                booking = {
-                    "room_id": args["room_id"], "room_name": room["name"],
-                    "guest_name": args["guest_name"], "guest_phone": args["guest_phone"],
-                    "check_in": args["check_in"], "check_out": args["check_out"],
-                    "num_guests": args["num_guests"], "nights": nights,
-                    "price_per_night": room["price_per_night"], "total_price": total,
-                    "token_amount": token, "payment_method": args.get("payment_method", ""),
-                    "currency": "INR", "special_requests": args.get("special_requests", ""),
-                }
-                booking_id = asyncio.get_event_loop().run_until_complete(save_booking(booking))
-                result = {
-                    "booking_id": booking_id, "room_name": room["name"],
-                    "guest_name": args["guest_name"], "total_price": total,
-                    "token_amount": token, "message": f"Booking confirmed! Reference: {booking_id}",
-                }
-                # Show confirmation banner
-                console.print()
-                panel_text = Text()
-                panel_text.append("BOOKING CONFIRMED\n\n", style="bold")
-                panel_text.append(f"  Reference:  {booking_id}\n")
-                panel_text.append(f"  Guest:      {args['guest_name']}\n")
-                panel_text.append(f"  Room:       {room['name']}\n")
-                panel_text.append(f"  Dates:      {args['check_in']} to {args['check_out']} ({nights} nights)\n")
-                panel_text.append(f"  Total:      Rs.{total:,}\n")
-                panel_text.append(f"  Token:      Rs.{token:,}\n")
-                panel_text.append(f"  Payment:    {args.get('payment_method', 'N/A')}\n")
-                console.print(Panel(panel_text, border_style="green", title="[bold green]Confirmed[/]", padding=(1, 2)))
-                console.print()
-            except Exception as e:
-                result = {"error": str(e)}
-
-    elif name == "get_booking":
-        booking = asyncio.get_event_loop().run_until_complete(get_booking(args["booking_id"]))
-        result = booking if booking else {"error": f"No booking found."}
-
-    else:
-        result = {"error": f"Unknown tool: {name}"}
-
-    # Log result
-    res_text = Text()
-    res_text.append(f"  [{ts}]  ", style="dim")
-    res_text.append("   TOOL", style="bold magenta")
-    found = result.get("found", result.get("booking_id", result.get("available", "done")))
-    res_text.append(f"  -> {found}", style="dim")
-    console.print(res_text)
-
-    return json.dumps(result)
+# Tool execution imported from tools.executor
 
 
-# ── Print helpers ───────────────────────────────────────────────────────
+# ── Banner ──────────────────────────────────────────────────────────────
 
 def print_banner():
     console.print()
@@ -430,8 +294,8 @@ def print_banner():
     banner.append("\n  THE GRAND MERIDIAN PALACE  \n", style="bold white on blue")
     banner.append("  Marine Drive, Mumbai, India  \n", style="bold white on dark_blue")
     banner.append("\n  Voice Booking Agent  \n", style="bold cyan")
-    banner.append("  Aria speaks. You speak. Press ENTER to record.  \n", style="dim")
-    banner.append("  Type 'quit' or press Ctrl+C to exit.  \n", style="dim")
+    banner.append("  Talk naturally — like a phone call  \n", style="dim")
+    banner.append("  Interrupt Aria anytime. Press Ctrl+C to exit.  \n", style="dim")
     console.print(Panel(banner, border_style="blue", padding=(0, 2)))
     console.print()
 
@@ -443,62 +307,91 @@ def main():
 
     messages = [
         {"role": "system", "content": SYSTEM_PROMPT},
-        {"role": "user", "content": "(The guest has just connected to the call. Greet them warmly.)"},
+        {"role": "user", "content": "(Guest just connected. Greet them warmly.)"},
     ]
 
     print_banner()
 
-    # Aria's initial greeting
-    response = client.chat.completions.create(
-        model="gpt-4o",
-        messages=messages,
-        tools=TOOLS,
-        temperature=0.8,
-    )
+    # Start always-on mic
+    mic = MicListener()
+    mic.start()
 
+    # Get Aria's greeting
+    response = client.chat.completions.create(model=LLM_MODEL, messages=messages, tools=TOOLS, temperature=LLM_TEMPERATURE_GREETING)
     assistant_msg = response.choices[0].message
     messages.append(assistant_msg)
 
-    if assistant_msg.content:
-        speak(client, assistant_msg.content)
+    # Speak greeting with live display
+    with Live(render_status_panel("IDLE"), console=console, refresh_per_second=10) as live:
+        if assistant_msg.content:
+            speak_with_interrupt(client, assistant_msg.content, mic, live)
 
-    # Conversation loop
+    console.print()
+
+    # Main loop — real-time two-way conversation
     while True:
-        # Listen to user via mic
-        user_input = listen(client)
-        if not user_input or user_input.lower() in ("quit", "exit", "bye", "goodbye"):
-            speak(client, "Thank you for calling The Grand Meridian Palace. Have a wonderful day! Namaste.")
+        # Show listening state with live waveform
+        with Live(render_status_panel("IDLE"), console=console, refresh_per_second=10) as live:
+            # Wait for user to speak (VAD detects automatically)
+            while True:
+                wave = make_waveform_text(mic.current_chunk, color="blue" if not mic.is_speaking else "yellow")
+                state = "YOU_SPEAKING" if mic.is_speaking else "IDLE"
+                live.update(render_status_panel(state, "", wave))
+                time.sleep(0.1)
+
+                if mic.check_speech_done():
+                    break
+
+        # Get audio and transcribe
+        audio = mic.get_audio_and_reset()
+        if audio is None:
+            continue
+
+        text = transcribe(client, audio)
+        if not text:
+            continue
+
+        # Log user speech
+        ts = datetime.now().strftime("%H:%M:%S")
+        user_log = Text()
+        user_log.append(f"  [{ts}]  ", style="dim")
+        user_log.append("  YOU ", style="bold yellow")
+        user_log.append("  >  ", style="dim")
+        user_log.append(text, style="white")
+        console.print(user_log)
+        console.print()
+
+        # Check for exit
+        lower = text.lower()
+        if any(word in lower for word in ("quit", "exit", "goodbye", "bye bye", "hang up")):
+            with Live(render_status_panel("ARIA_SPEAKING"), console=console, refresh_per_second=10) as live:
+                speak_with_interrupt(client, "Thank you for calling The Grand Meridian Palace. Wishing you a wonderful day! Namaste!", mic, live)
             break
 
-        messages.append({"role": "user", "content": user_input})
+        messages.append({"role": "user", "content": text})
 
-        # Process (handle tool calls in loop)
-        while True:
-            response = client.chat.completions.create(
-                model="gpt-4o",
-                messages=messages,
-                tools=TOOLS,
-                temperature=0.7,
-            )
+        # Get Aria's response (handle tool calls)
+        with Live(render_status_panel("THINKING"), console=console, refresh_per_second=10) as live:
+            while True:
+                response = client.chat.completions.create(model=LLM_MODEL, messages=messages, tools=TOOLS, temperature=LLM_TEMPERATURE_CONVERSATION)
+                assistant_msg = response.choices[0].message
+                messages.append(assistant_msg)
 
-            assistant_msg = response.choices[0].message
-            messages.append(assistant_msg)
+                if assistant_msg.tool_calls:
+                    for tc in assistant_msg.tool_calls:
+                        result = execute_tool(tc.function.name, json.loads(tc.function.arguments))
+                        messages.append({"role": "tool", "tool_call_id": tc.id, "content": result})
+                    continue
 
-            if assistant_msg.tool_calls:
-                for tool_call in assistant_msg.tool_calls:
-                    fn_name = tool_call.function.name
-                    fn_args = json.loads(tool_call.function.arguments)
-                    result = execute_tool(fn_name, fn_args)
-                    messages.append({
-                        "role": "tool",
-                        "tool_call_id": tool_call.id,
-                        "content": result,
-                    })
-                continue
+                # Speak response — can be interrupted
+                if assistant_msg.content:
+                    interrupted = speak_with_interrupt(client, assistant_msg.content, mic, live)
+                    if interrupted:
+                        # User interrupted — will be picked up in next loop
+                        pass
+                break
 
-            if assistant_msg.content:
-                speak(client, assistant_msg.content)
-            break
+    mic.stop()
 
 
 if __name__ == "__main__":

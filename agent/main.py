@@ -1,11 +1,17 @@
+"""
+LiveKit Voice Agent — The Grand Meridian Palace
+Run: make dev && make agent
+"""
+
 from dotenv import load_dotenv
 
 from livekit import agents
 from livekit.agents import AgentSession, AgentServer
 from livekit.plugins import openai, silero
 
+from agent.config import TTS_MODEL, TTS_VOICE, TTS_INSTRUCTIONS, STT_MODEL, LLM_MODEL
 from agent.hotel_agent import HotelAgent
-from agent.cli import log_event, print_banner, print_status
+from agent.cli import log_event, print_banner
 
 load_dotenv()
 
@@ -20,22 +26,17 @@ async def entrypoint(ctx: agents.JobContext):
     vad = silero.VAD.load()
 
     session = AgentSession(
-        stt=openai.STT(model="gpt-4o-transcribe"),
-        llm=openai.LLM(model="gpt-4o"),
+        stt=openai.STT(model=STT_MODEL),
+        llm=openai.LLM(model=LLM_MODEL),
         tts=openai.TTS(
-            model="gpt-4o-mini-tts",
-            voice="shimmer",
-            instructions=(
-                "Speak warmly and clearly like a 5-star Indian luxury hotel concierge. "
-                "Use a calm, gracious pace. Never use symbols or abbreviations. "
-                "Pronounce Indian names and places naturally."
-            ),
+            model=TTS_MODEL,
+            voice=TTS_VOICE,
+            instructions=TTS_INSTRUCTIONS,
         ),
         vad=vad,
     )
 
     agent = HotelAgent()
-
     await session.start(room=ctx.room, agent=agent)
 
     log_event("SYSTEM", "Connected to LiveKit room. Waiting for guest...")
