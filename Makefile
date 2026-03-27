@@ -6,6 +6,9 @@ install:
 run:
 	poetry run python -m app.main
 
+run-voice:
+	poetry run python -m app.main --mode voice
+
 # Client onboarding API (FastAPI)
 api:
 	poetry run python -m app.api.server
