@@ -1,9 +1,18 @@
+import logging
 from datetime import datetime, timezone
 from typing import Any
 
 from app.db.mongo import get_db
 from app.db.models import Booking
 from app.db.repositories.base import BaseRepository
+from app.utils.security import decrypt_sensitive_fields, encrypt_sensitive_fields
+
+logger = logging.getLogger(__name__)
+
+SENSITIVE_BOOKING_FIELDS = [
+    "customer_phone",
+    "customer_email",
+]
 
 
 class BookingRepository(BaseRepository):
@@ -60,13 +69,16 @@ class BookingRepository(BaseRepository):
         booking.booked_at = datetime.now(timezone.utc)
 
         data = booking.model_dump(mode="json")
+        data = encrypt_sensitive_fields(data, SENSITIVE_BOOKING_FIELDS)
         await self.insert_one(data)
+        logger.info("Booking '%s' saved (PII encrypted)", booking.booking_id)
         return booking.booking_id
 
     async def get_booking(self, booking_id: str) -> Booking | None:
         doc = await self.find_one({"booking_id": booking_id})
         if doc is None:
             return None
+        doc = decrypt_sensitive_fields(doc, SENSITIVE_BOOKING_FIELDS)
         return Booking(**doc)
 
     async def get_bookings_by_client(

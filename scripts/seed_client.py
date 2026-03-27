@@ -55,7 +55,8 @@ CLIENTS: dict[str, ClientConfig] = {
         ),
         database=ClientDatabase(
             db_type="mongodb",
-            # Empty = uses platform DB (same DB for testing)
+            connection_uri=settings.client_db_uri,
+            database_name=settings.client_db_name,
         ),
         voice=VoiceSettings(
             agent_name="Aria",
