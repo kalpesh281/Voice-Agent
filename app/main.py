@@ -16,7 +16,10 @@ from uuid import uuid4
 
 from langchain_core.messages import AIMessage, HumanMessage
 
+from rich.panel import Panel
+
 from app.cli.logger import (
+    ThinkingSpinner,
     console,
     log_booking_confirmed,
     log_event,
@@ -91,18 +94,19 @@ async def run_text_mode():
     # Display banner
     print_banner(config.business.name, config.voice.agent_name, config.business.category)
 
-    # Agent greeting
+    # Agent greeting with typing effect
     greeting = build_greeting(config)
-    log_event("AGENT", greeting)
-    print_separator()
+    log_event("AGENT", greeting, typing_effect=True)
 
     console.print(
-        "\n  [dim]Type your message and press Enter. Type 'quit' or 'exit' to end.[/dim]\n"
+        "  [dim]Type your message and press Enter. Type 'quit' or 'exit' to end.[/dim]\n"
     )
+
+    spinner = ThinkingSpinner(config.voice.agent_name)
 
     while True:
         try:
-            user_input = console.input("  [bold yellow]  YOU  >[/bold yellow]  ")
+            user_input = console.input("  [bold yellow] You [/bold yellow] > ")
         except (KeyboardInterrupt, EOFError):
             break
 
@@ -113,6 +117,9 @@ async def run_text_mode():
             continue
 
         log_event("USER", user_input.strip())
+
+        # Show thinking spinner
+        spinner.start()
 
         try:
             result = await graph.ainvoke(
@@ -125,6 +132,9 @@ async def run_text_mode():
                 config=graph_config,
             )
 
+            spinner.stop()
+
+            # Process tool calls and booking confirmations
             for msg in result.get("messages", []):
                 if hasattr(msg, "tool_calls") and msg.tool_calls:
                     for tc in msg.tool_calls:
@@ -142,18 +152,27 @@ async def run_text_mode():
                     except (json.JSONDecodeError, AttributeError):
                         pass
 
+            # Agent response with typing animation
             last_msg = result["messages"][-1]
             if isinstance(last_msg, AIMessage) and last_msg.content:
-                log_event("AGENT", last_msg.content)
+                log_event("AGENT", last_msg.content, typing_effect=True)
 
             print_separator()
 
         except Exception as e:
+            spinner.stop()
             logger.error("Agent error: %s", e, exc_info=True)
             log_event("ERROR", f"Something went wrong: {e}")
             print_separator()
 
-    console.print(f"\n  [dim]Goodbye! Thank you for using {config.business.name}.[/dim]\n")
+    # Goodbye
+    console.print()
+    console.print(Panel(
+        f"[dim]Thank you for using [bold]{config.business.name}[/bold]. Goodbye![/dim]",
+        border_style="blue",
+        padding=(0, 2),
+    ))
+    console.print()
     await disconnect()
 
 

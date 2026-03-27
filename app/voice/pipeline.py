@@ -70,6 +70,7 @@ class VoicePipeline:
         # State
         self._running = False
         self._agent_speaking = False
+        self._greeting_text = build_greeting(client_config)
 
     async def run(self):
         """Start all components and run the voice conversation loop."""
@@ -82,19 +83,14 @@ class VoicePipeline:
         # Start microphone
         self._mic.start()
 
-        # Agent greeting (TTS)
-        greeting = build_greeting(self._config)
-        log_event("AGENT", greeting)
-        await self._speak(greeting)
-
-        # Run the three loops concurrently with live display
+        # Run all loops concurrently (greeting is handled inside agent loop)
         live = self._display.start()
         try:
             with live:
-                self._display.update_state("LISTENING")
+                self._display.update_state("AGENT_SPEAKING")
                 await asyncio.gather(
                     self._capture_loop(),
-                    self._agent_loop(),
+                    self._greeting_then_agent_loop(),
                     self._playback_loop(),
                 )
         except asyncio.CancelledError:
@@ -125,6 +121,16 @@ class VoicePipeline:
             except Exception as e:
                 logger.error("Capture loop error: %s", e)
                 await asyncio.sleep(0.1)
+
+    async def _greeting_then_agent_loop(self):
+        """First speaks the greeting, then enters the main agent loop."""
+        # Speak greeting (playback loop is already running in parallel)
+        log_event("AGENT", self._greeting_text)
+        await self._speak(self._greeting_text)
+        self._display.update_state("LISTENING")
+
+        # Now run the agent loop
+        await self._agent_loop()
 
     async def _agent_loop(self):
         """Waits for transcripts, invokes the LangGraph agent, sends response to TTS."""
@@ -205,7 +211,7 @@ class VoicePipeline:
                 await asyncio.sleep(0.1)
 
     async def _speak(self, text: str):
-        """Send text to TTS and mark agent as speaking."""
+        """Send text to TTS and wait for playback to finish."""
         self._agent_speaking = True
         self._speaker.reset()
         self._display.update_state("AGENT_SPEAKING")
@@ -213,12 +219,14 @@ class VoicePipeline:
         await self._tts.synthesize(text)
         await self._tts.flush()
 
-        # Wait for all audio to finish playing
+        # Wait for all audio to be consumed by playback loop
         while self._tts.has_audio or self._speaker.is_playing:
             if self._speaker.is_interrupted:
                 break
             await asyncio.sleep(0.05)
 
+        # Small buffer to let last chunk finish playing
+        await asyncio.sleep(0.3)
         self._agent_speaking = False
 
     async def _shutdown(self):

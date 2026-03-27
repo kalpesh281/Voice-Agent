@@ -11,15 +11,11 @@ from deepgram import AsyncDeepgramClient
 from deepgram.core.events import EventType
 from deepgram.speak.v1.types import (
     SpeakV1Clear,
-    SpeakV1ClearType,
     SpeakV1Close,
-    SpeakV1CloseType,
     SpeakV1Flush,
-    SpeakV1FlushType,
     SpeakV1Flushed,
     SpeakV1Metadata,
     SpeakV1Text,
-    SpeakV1TextType,
     SpeakV1Warning,
 )
 
@@ -70,16 +66,13 @@ class StreamingTTS:
         logger.info("Deepgram TTS connected (model=%s)", self._model)
 
     async def synthesize(self, text: str):
-        """Send text for synthesis. Audio chunks arrive via _on_message.
-
-        Call flush() after to ensure all audio is generated.
-        """
+        """Send text for synthesis. Audio chunks arrive via _on_message."""
         if not self._ws or not self._connected:
             logger.warning("TTS not connected, skipping synthesis")
             return
 
         try:
-            msg = SpeakV1Text(type=SpeakV1TextType.TEXT, text=text)
+            msg = SpeakV1Text(type="Speak", text=text)
             await self._ws.send_text(msg)
         except Exception as e:
             logger.error("Failed to send text for synthesis: %s", e)
@@ -91,9 +84,8 @@ class StreamingTTS:
 
         try:
             self._flushed_event.clear()
-            msg = SpeakV1Flush(type=SpeakV1FlushType.FLUSH)
+            msg = SpeakV1Flush(type="Flush")
             await self._ws.send_flush(msg)
-            # Wait for the flushed confirmation (with timeout)
             try:
                 await asyncio.wait_for(self._flushed_event.wait(), timeout=10.0)
             except asyncio.TimeoutError:
@@ -107,7 +99,7 @@ class StreamingTTS:
             return
 
         try:
-            msg = SpeakV1Clear(type=SpeakV1ClearType.CLEAR)
+            msg = SpeakV1Clear(type="Clear")
             await self._ws.send_clear(msg)
             # Drain the audio queue
             while not self._audio_queue.empty():
@@ -136,7 +128,6 @@ class StreamingTTS:
     def _on_message(self, data):
         """Handle incoming messages from Deepgram TTS."""
         if isinstance(data, bytes):
-            # Raw audio data — put in queue for playback
             self._audio_queue.put_nowait(data)
         elif isinstance(data, SpeakV1Flushed):
             self._flushed_event.set()
@@ -159,7 +150,7 @@ class StreamingTTS:
 
         if self._ws:
             try:
-                msg = SpeakV1Close(type=SpeakV1CloseType.CLOSE)
+                msg = SpeakV1Close(type="Close")
                 await self._ws.send_close(msg)
             except Exception:
                 pass

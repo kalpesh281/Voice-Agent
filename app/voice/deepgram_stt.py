@@ -45,17 +45,18 @@ class StreamingSTT:
 
     async def start(self):
         """Open the WebSocket connection and start listening for events."""
+        # Note: SDK v6 requires string 'true' not Python True for boolean params
         self._connection = self._client.listen.v1.connect(
             model=self._model,
             language=self._language,
             encoding=self._encoding,
             sample_rate=self._sample_rate,
-            smart_format=True,
-            interim_results=True,
-            utterance_end_ms=1500,
-            vad_events=True,
+            smart_format="true",
+            interim_results="true",
+            utterance_end_ms="1500",
+            vad_events="true",
             endpointing=300,
-            punctuate=True,
+            punctuate="true",
         )
 
         # Enter the async context manager

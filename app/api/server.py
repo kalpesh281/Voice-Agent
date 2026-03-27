@@ -2,6 +2,8 @@
 
 Provides:
   - Client onboarding API (POST/GET/PUT/DELETE /api/v1/clients)
+  - WebSocket voice endpoint (/ws/voice/{client_id})
+  - Static frontend serving
   - Health check
 
 Usage:
@@ -11,11 +13,15 @@ Usage:
 
 import logging
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 import uvicorn
-from fastapi import FastAPI
+from fastapi import FastAPI, WebSocket
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 
 from app.api.routes import router
+from app.api.websocket import voice_websocket_endpoint
 from app.config import settings
 from app.db.mongo import connect_platform, disconnect
 
@@ -24,6 +30,10 @@ logging.basicConfig(
     format="%(asctime)s [%(name)s] %(levelname)s: %(message)s",
 )
 logger = logging.getLogger(__name__)
+
+# Suppress noisy loggers
+for noisy in ["httpx", "httpcore", "openai", "urllib3"]:
+    logging.getLogger(noisy).setLevel(logging.WARNING)
 
 
 @asynccontextmanager
@@ -39,17 +49,39 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="Voice Booking Agent — Platform API",
-    description="Client onboarding and management API",
+    description="Client onboarding, management, and real-time voice WebSocket API",
     version="2.0.0",
     lifespan=lifespan,
 )
 
+# CORS for frontend dev server
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:5173", "http://localhost:3000", "http://127.0.0.1:5173"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# REST API routes
 app.include_router(router)
+
+
+# WebSocket voice endpoint
+@app.websocket("/ws/voice/{client_id}")
+async def voice_ws(websocket: WebSocket, client_id: str):
+    await voice_websocket_endpoint(websocket, client_id)
 
 
 @app.get("/health")
 async def health():
     return {"status": "ok", "database": settings.mongodb_database}
+
+
+# Serve frontend static files (if built)
+FRONTEND_DIST = Path(__file__).resolve().parent.parent.parent / "frontend" / "dist"
+if FRONTEND_DIST.exists():
+    app.mount("/", StaticFiles(directory=str(FRONTEND_DIST), html=True), name="frontend")
 
 
 if __name__ == "__main__":
