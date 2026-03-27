@@ -1,0 +1,47 @@
+@import "tailwindcss";
+
+@theme {
+  --color-bg-primary: #F5F6FA;
+  --color-bg-secondary: #FFFFFF;
+  --color-bg-elevated: #EEF0F6;
+  --color-bg-glass: rgba(255, 255, 255, 0.85);
+
+  --color-accent: #059669;
+  --color-accent-dim: rgba(5, 150, 105, 0.1);
+  --color-violet: #7C3AED;
+  --color-violet-dim: rgba(124, 58, 237, 0.1);
+  --color-coral: #DC2626;
+  --color-coral-dim: rgba(220, 38, 38, 0.08);
+
+  --color-text-primary: #111827;
+  --color-text-secondary: #4B5563;
+  --color-text-muted: #9CA3AF;
+
+  --color-border-glass: rgba(0, 0, 0, 0.08);
+  --color-border-subtle: rgba(0, 0, 0, 0.06);
+}
+
+body {
+  background-color: var(--color-bg-primary);
+  color: var(--color-text-primary);
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  -webkit-font-smoothing: antialiased;
+  overflow: hidden;
+  height: 100vh;
+}
+
+#root {
+  height: 100vh;
+}
+
+::-webkit-scrollbar { width: 5px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #D1D5DB; border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: var(--color-accent); }
+
+.glass {
+  background: var(--color-bg-secondary);
+  border: 1px solid var(--color-border-glass);
+  border-radius: 16px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.06), 0 6px 20px rgba(0,0,0,0.04);
+}

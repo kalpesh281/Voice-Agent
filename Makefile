@@ -13,6 +13,19 @@ run-voice:
 api:
 	poetry run python -m app.api.server
 
+# Frontend
+frontend-dev:
+	cd frontend && npm run dev
+
+frontend-build:
+	cd frontend && npm run build
+
+# Full stack: backend API + frontend dev server
+dev:
+	@echo "Start backend:  make api"
+	@echo "Start frontend: make frontend-dev"
+	@echo "Open browser:   http://localhost:5173"
+
 # Seed MongoDB with client config and resources
 seed:
 	poetry run python scripts/seed_client.py --all

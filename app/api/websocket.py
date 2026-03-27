@@ -4,7 +4,7 @@ Flow:
   Browser mic → audio chunks (binary) → WebSocket → Deepgram STT → transcript
   → LangGraph Agent → response text → Deepgram TTS → audio chunks (binary) → WebSocket → Browser speaker
 
-JSON control messages are also sent for:
+JSON control messages for:
   - transcripts, agent responses, tool calls, booking confirmations
   - state updates (listening, thinking, speaking)
 """
@@ -20,7 +20,7 @@ from langchain_core.messages import AIMessage, HumanMessage
 from app.agent.graph import build_graph
 from app.config import settings
 from app.db.models import ClientConfig
-from app.db.mongo import connect_client, get_client_db
+from app.db.mongo import connect_client
 from app.db.repositories.client_repo import ClientRepository
 from app.utils.prompt_builder import build_greeting
 from app.voice.deepgram_stt import StreamingSTT
@@ -53,32 +53,24 @@ class WebSocketVoiceSession:
         )
 
     async def send_json(self, msg_type: str, data: dict = {}):
-        """Send a JSON control message to the browser."""
         try:
             await self.ws.send_json({"type": msg_type, **data})
         except Exception:
             pass
 
     async def run(self):
-        """Start the voice session — 3 concurrent tasks."""
+        """Start the voice session — all tasks run concurrently including greeting."""
         self.running = True
 
         await self.stt.start()
         await self.tts.start()
 
-        # Send greeting
-        greeting = build_greeting(self.config)
-        await self.send_json("state", {"state": "agent_speaking"})
-        await self.send_json("agent_message", {"text": greeting})
-        await self._synthesize_and_stream(greeting)
-        await self.send_json("state", {"state": "listening"})
-
-        # Run concurrent tasks
+        # Run ALL tasks concurrently — greeting is inside _greeting_then_listen
         try:
             await asyncio.gather(
                 self._receive_audio_loop(),
-                self._transcript_loop(),
-                self._tts_audio_loop(),
+                self._greeting_then_listen(),
+                self._tts_to_browser_loop(),
             )
         except WebSocketDisconnect:
             logger.info("WebSocket disconnected")
@@ -110,6 +102,26 @@ class WebSocketVoiceSession:
 
         self.running = False
 
+    async def _greeting_then_listen(self):
+        """Speak greeting first (TTS audio loop is already running), then listen for transcripts."""
+        # Greeting — TTS audio will be picked up by _tts_to_browser_loop running in parallel
+        greeting = build_greeting(self.config)
+        await self.send_json("state", {"state": "agent_speaking"})
+        await self.send_json("agent_message", {"text": greeting})
+
+        await self.tts.synthesize(greeting)
+        await self.tts.flush()
+
+        # Wait for TTS audio to drain
+        while self.tts.has_audio:
+            await asyncio.sleep(0.05)
+        await asyncio.sleep(0.5)
+
+        await self.send_json("state", {"state": "listening"})
+
+        # Now enter the main transcript loop
+        await self._transcript_loop()
+
     async def _transcript_loop(self):
         """Wait for STT transcripts, invoke agent, send response to TTS."""
         while self.running:
@@ -125,7 +137,6 @@ class WebSocketVoiceSession:
             if not transcript:
                 continue
 
-            # Notify browser: user transcript
             await self.send_json("user_transcript", {"text": transcript})
             await self.send_json("state", {"state": "thinking"})
 
@@ -140,7 +151,6 @@ class WebSocketVoiceSession:
                     config=self.graph_config,
                 )
 
-                # Process tool calls and bookings
                 for msg in result.get("messages", []):
                     if hasattr(msg, "tool_calls") and msg.tool_calls:
                         for tc in msg.tool_calls:
@@ -163,13 +173,19 @@ class WebSocketVoiceSession:
                         except (json.JSONDecodeError, AttributeError):
                             pass
 
-                # Agent response
                 last_msg = result["messages"][-1]
                 if isinstance(last_msg, AIMessage) and last_msg.content:
                     response_text = last_msg.content
                     await self.send_json("state", {"state": "agent_speaking"})
                     await self.send_json("agent_message", {"text": response_text})
-                    await self._synthesize_and_stream(response_text)
+
+                    await self.tts.synthesize(response_text)
+                    await self.tts.flush()
+
+                    # Wait for audio to drain
+                    while self.tts.has_audio:
+                        await asyncio.sleep(0.05)
+                    await asyncio.sleep(0.3)
 
                 await self.send_json("state", {"state": "listening"})
 
@@ -178,8 +194,8 @@ class WebSocketVoiceSession:
                 await self.send_json("error", {"message": "Something went wrong. Please try again."})
                 await self.send_json("state", {"state": "listening"})
 
-    async def _tts_audio_loop(self):
-        """Forward TTS audio chunks to the browser via WebSocket."""
+    async def _tts_to_browser_loop(self):
+        """Forward TTS audio chunks to the browser via WebSocket binary frames."""
         while self.running:
             try:
                 chunk = await asyncio.wait_for(
@@ -191,21 +207,11 @@ class WebSocketVoiceSession:
             except Exception:
                 break
 
-    async def _synthesize_and_stream(self, text: str):
-        """Synthesize text and wait for TTS to flush."""
-        await self.tts.synthesize(text)
-        await self.tts.flush()
-        # Wait for audio queue to drain
-        while self.tts.has_audio:
-            await asyncio.sleep(0.05)
-        await asyncio.sleep(0.3)
-
 
 async def voice_websocket_endpoint(websocket: WebSocket, client_id: str):
-    """WebSocket endpoint handler — called from routes."""
+    """WebSocket endpoint handler."""
     await websocket.accept()
 
-    # Load client config
     repo = ClientRepository()
     config = await repo.get_by_id(client_id)
     if not config:
@@ -213,7 +219,6 @@ async def voice_websocket_endpoint(websocket: WebSocket, client_id: str):
         await websocket.close()
         return
 
-    # Connect to client's DB if not already connected
     try:
         client_uri = config.database.connection_uri or settings.client_db_uri or settings.mongodb_uri
         client_db_name = config.database.database_name or settings.client_db_name or settings.mongodb_database
@@ -223,10 +228,8 @@ async def voice_websocket_endpoint(websocket: WebSocket, client_id: str):
         await websocket.close()
         return
 
-    # Build agent
     graph = build_graph(config, settings)
 
-    # Send client info to browser
     await websocket.send_json({
         "type": "session_start",
         "client_id": client_id,
@@ -235,6 +238,5 @@ async def voice_websocket_endpoint(websocket: WebSocket, client_id: str):
         "category": config.business.category,
     })
 
-    # Run the voice session
     session = WebSocketVoiceSession(websocket, config, graph)
     await session.run()

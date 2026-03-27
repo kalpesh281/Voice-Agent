@@ -219,14 +219,21 @@ class VoicePipeline:
         await self._tts.synthesize(text)
         await self._tts.flush()
 
-        # Wait for all audio to be consumed by playback loop
-        while self._tts.has_audio or self._speaker.is_playing:
+        # Wait for TTS queue to drain into speaker buffer
+        while self._tts.has_audio:
             if self._speaker.is_interrupted:
                 break
             await asyncio.sleep(0.05)
 
-        # Small buffer to let last chunk finish playing
-        await asyncio.sleep(0.3)
+        # Flush any remaining buffered audio in speaker
+        await self._speaker.flush_remaining()
+
+        # Wait for playback to finish
+        while self._speaker.is_playing:
+            if self._speaker.is_interrupted:
+                break
+            await asyncio.sleep(0.05)
+
         self._agent_speaking = False
 
     async def _shutdown(self):
