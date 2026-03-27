@@ -35,6 +35,10 @@ rich = "^13.0"
 # Security
 cryptography = ">=42.0"
 
+# API
+fastapi = ">=0.115"
+uvicorn = {version = ">=0.30", extras = ["standard"]}
+
 # Async
 aiofiles = ">=24.0"
 

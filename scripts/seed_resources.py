@@ -16,7 +16,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from app.config import settings
-from app.db.mongo import connect, disconnect, get_db
+from app.db.mongo import connect_client, disconnect, get_client_db
 
 
 # ──────────────────────────────────────────────
@@ -209,7 +209,7 @@ async def seed_category(category: str):
         print(f"  No data for category: {category}")
         return
 
-    db = get_db()
+    db = get_client_db()
     collection = db[collection_name]
 
     # Drop existing and re-seed
@@ -233,7 +233,10 @@ async def main():
     )
     args = parser.parse_args()
 
-    await connect(settings.mongodb_uri, settings.mongodb_database)
+    # Seed into client's DB (for testing, use CLIENT_DB_URI or fall back to platform DB)
+    uri = settings.client_db_uri or settings.mongodb_uri
+    db_name = settings.client_db_name or settings.mongodb_database
+    await connect_client(uri, db_name)
 
     categories = list(CATEGORY_DATA.keys()) if args.all else [args.category]
     for cat in categories:

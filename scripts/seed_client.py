@@ -4,6 +4,7 @@ Usage:
     poetry run python scripts/seed_client.py                 # seeds hotel (default)
     poetry run python scripts/seed_client.py --category restaurant
     poetry run python scripts/seed_client.py --category cricket_ground
+    poetry run python scripts/seed_client.py --all
 """
 
 import argparse
@@ -11,14 +12,15 @@ import asyncio
 import sys
 from pathlib import Path
 
-# Add project root to path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from app.config import settings
-from app.db.mongo import connect, disconnect
+from app.db.mongo import connect_platform, disconnect
 from app.db.models import (
     BusinessDetails,
     ClientConfig,
+    ClientDatabase,
+    ClientOwner,
     DatabaseMapping,
     VoiceSettings,
 )
@@ -32,6 +34,12 @@ from app.db.repositories.client_repo import ClientRepository
 CLIENTS: dict[str, ClientConfig] = {
     "hotel": ClientConfig(
         client_id="grand-meridian-palace",
+        owner=ClientOwner(
+            name="Rajesh Sharma",
+            email="rajesh@grandmeridian.com",
+            phone="+91-9876543210",
+            company="Grand Meridian Hotels Pvt. Ltd.",
+        ),
         business=BusinessDetails(
             name="The Grand Meridian Palace",
             location="Marine Drive, Mumbai, India",
@@ -44,6 +52,10 @@ CLIENTS: dict[str, ClientConfig] = {
                 "Complimentary airport pickup for suites and above.",
                 "Pets are not allowed.",
             ],
+        ),
+        database=ClientDatabase(
+            db_type="mongodb",
+            # Empty = uses platform DB (same DB for testing)
         ),
         voice=VoiceSettings(
             agent_name="Aria",
@@ -84,10 +96,15 @@ CLIENTS: dict[str, ClientConfig] = {
             "create_booking",
             "get_booking",
         ],
-        system_prompt_template="",  # uses default hotel template
     ),
     "restaurant": ClientConfig(
         client_id="maharajas-kitchen",
+        owner=ClientOwner(
+            name="Anita Desai",
+            email="anita@maharajaskitchen.com",
+            phone="+91-9123456780",
+            company="Maharaja's Kitchen LLP",
+        ),
         business=BusinessDetails(
             name="Maharaja's Kitchen",
             location="Bandra West, Mumbai, India",
@@ -101,6 +118,7 @@ CLIENTS: dict[str, ClientConfig] = {
                 "Dress code: smart casual.",
             ],
         ),
+        database=ClientDatabase(db_type="mongodb"),
         voice=VoiceSettings(
             agent_name="Priya",
             agent_personality=(
@@ -132,10 +150,15 @@ CLIENTS: dict[str, ClientConfig] = {
             "check_availability",
             "create_booking",
         ],
-        system_prompt_template="",
     ),
     "cricket_ground": ClientConfig(
         client_id="mumbai-sports-arena",
+        owner=ClientOwner(
+            name="Vikram Singh",
+            email="vikram@mumbaiarena.com",
+            phone="+91-9988776655",
+            company="Mumbai Sports Arena Pvt. Ltd.",
+        ),
         business=BusinessDetails(
             name="Mumbai Sports Arena",
             location="Andheri East, Mumbai, India",
@@ -149,6 +172,7 @@ CLIENTS: dict[str, ClientConfig] = {
                 "Floodlights available for evening slots.",
             ],
         ),
+        database=ClientDatabase(db_type="mongodb"),
         voice=VoiceSettings(
             agent_name="Raj",
             agent_personality=(
@@ -183,7 +207,6 @@ CLIENTS: dict[str, ClientConfig] = {
             "check_availability",
             "create_booking",
         ],
-        system_prompt_template="",
     ),
 }
 
@@ -203,7 +226,7 @@ async def main():
     )
     args = parser.parse_args()
 
-    await connect(settings.mongodb_uri, settings.mongodb_database)
+    await connect_platform(settings.mongodb_uri, settings.mongodb_database)
     repo = ClientRepository()
 
     categories = list(CLIENTS.keys()) if args.all else [args.category]
@@ -212,6 +235,9 @@ async def main():
         config = CLIENTS[cat]
         client_id = await repo.upsert(config)
         print(f"  Seeded client: {client_id} ({cat})")
+        print(f"    Owner: {config.owner.name} ({config.owner.phone})")
+        print(f"    Business: {config.business.name}")
+        print(f"    DB type: {config.database.db_type}")
 
     await disconnect()
     print("\nDone!")

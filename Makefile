@@ -1,10 +1,14 @@
-.PHONY: install run seed seed-all test lint clean
+.PHONY: install run api seed seed-all test lint clean
 
 install:
 	poetry install
 
 run:
 	poetry run python -m app.main
+
+# Client onboarding API (FastAPI)
+api:
+	poetry run python -m app.api.server
 
 # Seed MongoDB with client config and resources
 seed:

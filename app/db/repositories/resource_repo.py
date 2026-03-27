@@ -1,12 +1,13 @@
 from typing import Any
 
-from app.db.mongo import get_db
+from app.db.mongo import get_client_db
 from app.db.repositories.base import BaseRepository
 
 
 class ResourceRepository(BaseRepository):
     """Generic resource repository — works for rooms, tables, courts, etc.
 
+    Reads from the CLIENT's database (not platform DB).
     The collection name comes from the client's DatabaseMapping config,
     so one repository class serves all categories.
     """
@@ -15,7 +16,7 @@ class ResourceRepository(BaseRepository):
         self._collection_name = collection_name
 
     def _col(self):
-        return get_db()[self._collection_name]
+        return get_client_db()[self._collection_name]
 
     async def find_one(self, filter: dict[str, Any]) -> dict | None:
         return await self._col().find_one(filter, {"_id": 0})
