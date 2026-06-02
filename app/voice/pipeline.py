@@ -133,7 +133,12 @@ class VoicePipeline:
         await self._agent_loop()
 
     async def _agent_loop(self):
-        """Waits for transcripts, invokes the LangGraph agent, sends response to TTS."""
+        """Waits for transcripts, invokes the LangGraph agent, sends response to TTS.
+
+        Uses debounce: after receiving a transcript, waits briefly for more
+        fragments before sending to the agent.
+        """
+        DEBOUNCE_SECONDS = 0.8
         graph_config = {"configurable": {"thread_id": self._thread_id}}
 
         while self._running:
@@ -142,6 +147,19 @@ class VoicePipeline:
                 transcript = await self._stt.get_transcript()
                 if not transcript:
                     continue
+
+                # Debounce: accumulate fragments if user is still speaking
+                accumulated = transcript
+                while True:
+                    try:
+                        more = await asyncio.wait_for(
+                            self._stt.get_transcript(), timeout=DEBOUNCE_SECONDS
+                        )
+                        if more:
+                            accumulated = f"{accumulated} {more}"
+                    except asyncio.TimeoutError:
+                        break
+                transcript = accumulated
 
                 self._display.update_state("THINKING")
                 self._display.update_transcript(transcript)

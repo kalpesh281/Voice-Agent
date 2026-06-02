@@ -123,7 +123,14 @@ class WebSocketVoiceSession:
         await self._transcript_loop()
 
     async def _transcript_loop(self):
-        """Wait for STT transcripts, invoke agent, send response to TTS."""
+        """Wait for STT transcripts, invoke agent, send response to TTS.
+
+        Uses debounce: after receiving a transcript, waits briefly for more
+        fragments before sending to the agent. This prevents split utterances
+        from generating parallel responses when the user pauses mid-sentence.
+        """
+        DEBOUNCE_SECONDS = 0.8
+
         while self.running:
             try:
                 transcript = await asyncio.wait_for(
@@ -136,6 +143,20 @@ class WebSocketVoiceSession:
 
             if not transcript:
                 continue
+
+            # Debounce: accumulate fragments if user is still speaking
+            accumulated = transcript
+            while True:
+                try:
+                    more = await asyncio.wait_for(
+                        self.stt.get_transcript(), timeout=DEBOUNCE_SECONDS
+                    )
+                    if more:
+                        accumulated = f"{accumulated} {more}"
+                except asyncio.TimeoutError:
+                    break
+
+            transcript = accumulated
 
             await self.send_json("user_transcript", {"text": transcript})
             await self.send_json("state", {"state": "thinking"})

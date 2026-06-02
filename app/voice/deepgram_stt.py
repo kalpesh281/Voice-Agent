@@ -53,9 +53,9 @@ class StreamingSTT:
             sample_rate=self._sample_rate,
             smart_format="true",
             interim_results="true",
-            utterance_end_ms="1500",
+            utterance_end_ms="2000",
             vad_events="true",
-            endpointing=300,
+            endpointing=600,
             punctuate="true",
         )
 
