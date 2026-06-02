@@ -9,15 +9,14 @@ import useWebSocket from '../hooks/useWebSocket'
 import useAudioCapture from '../hooks/useAudioCapture'
 import useAudioPlayback from '../hooks/useAudioPlayback'
 
-const CLIENT_ID = 'grand-meridian-palace'
-
 export default function DashboardPage() {
   const dispatch = useDispatch()
   const isMicOn = useSelector((s) => s.voice.isMicOn)
   const isConnected = useSelector((s) => s.voice.isConnected)
+  const clientId = useSelector((s) => s.auth.user?.client_id)
 
   const { initContext, enqueueAudio, clearQueue, cleanup: cleanupPlayback } = useAudioPlayback()
-  const { connect, disconnect, sendAudio } = useWebSocket(CLIENT_ID, enqueueAudio)
+  const { connect, disconnect, sendAudio } = useWebSocket(clientId, enqueueAudio)
   const { startCapture, stopCapture } = useAudioCapture(sendAudio)
 
   // Connect: init audio context (user gesture), connect WS, start mic
@@ -47,6 +46,15 @@ export default function DashboardPage() {
     }
   }, [isMicOn, startCapture, stopCapture, dispatch])
 
+  // New conversation: disconnect, reset everything
+  const handleNewConversation = useCallback(() => {
+    stopCapture()
+    clearQueue()
+    disconnect()
+    dispatch(resetConversation())
+    dispatch(resetBooking())
+  }, [stopCapture, clearQueue, disconnect, dispatch])
+
   useEffect(() => {
     return () => {
       stopCapture()
@@ -56,8 +64,8 @@ export default function DashboardPage() {
   }, [stopCapture, disconnect, cleanupPlayback])
 
   return (
-    <div className="h-screen flex flex-col bg-bg-primary">
-      <TopBar />
+    <div className="h-screen flex flex-col bg-bg-primary overflow-hidden">
+      <TopBar onNewConversation={handleNewConversation} />
       <div className="flex flex-1 overflow-hidden">
         <VoicePanel
           onConnect={handleConnect}

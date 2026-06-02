@@ -20,7 +20,33 @@ from pydantic import BaseModel, Field
 
 
 # ──────────────────────────────────────────────
-#  Tier 2: Client (Business Owner) Models
+#  Tier 2a: Client User Account (Login)
+# ──────────────────────────────────────────────
+
+
+class ClientUser(BaseModel):
+    """Platform account for a business owner (Tier 2).
+
+    Created at signup. Linked to ClientConfig after onboarding completes.
+    Stored in MongoDB `users` collection (platform DB).
+    """
+
+    user_id: str                                # UUID4, primary key
+    email: str                                  # login identifier, unique
+    hashed_password: str                        # bcrypt hash
+    full_name: str = ""
+
+    # Link to their ClientConfig (set after onboarding completes)
+    client_id: str = ""                         # "" means not yet onboarded
+    onboarding_complete: bool = False
+
+    is_active: bool = True
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+# ──────────────────────────────────────────────
+#  Tier 2b: Client (Business Owner) Models
 # ──────────────────────────────────────────────
 
 

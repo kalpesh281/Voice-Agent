@@ -90,6 +90,7 @@ async def onboard_client(req: ClientOnboardRequest):
             greeting_template=req.greeting_template,
             tts_voice=req.tts_voice,
         ),
+        system_prompt_template=req.system_prompt_template or "",
     )
 
     await repo.upsert(config)
@@ -176,6 +177,7 @@ async def update_client(client_id: str, req: ClientOnboardRequest):
             greeting_template=req.greeting_template or existing.voice.greeting_template,
             tts_voice=req.tts_voice,
         ),
+        system_prompt_template=req.system_prompt_template if req.system_prompt_template else existing.system_prompt_template,
         created_at=existing.created_at,
     )
 

@@ -38,6 +38,8 @@ class Settings(BaseSettings):
 
     # Security
     encryption_key: str = ""
+    session_secret_key: str = "change-me-in-production-use-random-32-bytes"
+    session_max_age_days: int = 7
 
     # Active client
     client_id: str = "grand-meridian-palace"

@@ -1,7 +1,9 @@
 import { motion } from 'framer-motion'
+import { useSelector } from 'react-redux'
 
 export default function TranscriptBubble({ role, text, timestamp }) {
   const isUser = role === 'user'
+  const agentName = useSelector((s) => s.client.config?.agent_name) || 'Agent'
   const time = new Date(timestamp).toLocaleTimeString('en-IN', {
     hour: '2-digit',
     minute: '2-digit',
@@ -16,7 +18,7 @@ export default function TranscriptBubble({ role, text, timestamp }) {
     >
       <div className="flex items-center gap-2 mb-1 px-1">
         <span className={`text-[10px] font-bold tracking-wider uppercase ${isUser ? 'text-violet' : 'text-accent'}`}>
-          {isUser ? 'You' : 'Aria'}
+          {isUser ? 'You' : agentName}
         </span>
         <span className="text-[10px] text-gray-300">{time}</span>
       </div>

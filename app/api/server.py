@@ -20,8 +20,12 @@ from fastapi import FastAPI, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
+from app.api.auth import auth_router
+from app.api.onboard_ws import onboard_websocket_endpoint
+from app.api.resources import resources_router
 from app.api.routes import router
 from app.api.websocket import voice_websocket_endpoint
+from app.db.repositories.user_repo import UserRepository
 from app.config import settings
 from app.db.mongo import connect_platform, disconnect
 
@@ -40,7 +44,17 @@ for noisy in ["httpx", "httpcore", "openai", "urllib3"]:
 async def lifespan(app: FastAPI):
     """Connect to platform DB on startup, disconnect on shutdown."""
     logger.info("Connecting to Platform DB...")
-    await connect_platform(settings.mongodb_uri, settings.mongodb_database)
+    db = await connect_platform(settings.mongodb_uri, settings.mongodb_database)
+    await UserRepository().ensure_indexes()
+
+    # TTL index: auto-delete checkpoints older than 24 hours
+    try:
+        await db["checkpoints"].create_index("created_at", expireAfterSeconds=86400)
+        await db["checkpoint_writes"].create_index("created_at", expireAfterSeconds=86400)
+        logger.info("Checkpoint TTL indexes ensured (24h expiry)")
+    except Exception as e:
+        logger.debug("Checkpoint TTL index: %s", e)
+
     logger.info("API server ready")
     yield
     await disconnect()
@@ -65,12 +79,20 @@ app.add_middleware(
 
 # REST API routes
 app.include_router(router)
+app.include_router(auth_router)
+app.include_router(resources_router)
 
 
 # WebSocket voice endpoint
 @app.websocket("/ws/voice/{client_id}")
 async def voice_ws(websocket: WebSocket, client_id: str):
     await voice_websocket_endpoint(websocket, client_id)
+
+
+# WebSocket onboarding endpoint
+@app.websocket("/ws/onboard/{session_id}")
+async def onboard_ws(websocket: WebSocket, session_id: str):
+    await onboard_websocket_endpoint(websocket, session_id)
 
 
 @app.get("/health")
