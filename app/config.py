@@ -1,9 +1,16 @@
+from pathlib import Path
+
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+# Anchor .env to the project root so it loads no matter where the process is
+# launched from (a relative "./.env" only works when CWD is the project root,
+# which breaks under some launchers / reloader subprocesses).
+_PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
-        env_file=".env",
+        env_file=_PROJECT_ROOT / ".env",
         env_file_encoding="utf-8",
         extra="ignore",
     )
@@ -18,9 +25,9 @@ class Settings(BaseSettings):
     client_db_uri: str = ""
     client_db_name: str = ""
 
-    # OpenAI (LLM via LangChain)
-    openai_api_key: str
-    llm_model: str = "gpt-4o-mini"
+    # OpenRouter (LLM via LangChain)
+    openrouter_api_key: str
+    llm_model: str = "openrouter/owl-alpha"
     llm_temperature: float = 0.7
 
     # Deepgram (STT + TTS)

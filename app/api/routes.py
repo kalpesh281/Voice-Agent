@@ -3,7 +3,9 @@
 import logging
 import re
 
-from fastapi import APIRouter, HTTPException
+import httpx
+from fastapi import APIRouter, HTTPException, Query
+from fastapi.responses import StreamingResponse
 
 from app.api.schemas import (
     ClientDetailResponse,
@@ -19,11 +21,40 @@ from app.db.models import (
     DatabaseMapping,
     VoiceSettings,
 )
+from app.config import settings
 from app.db.repositories.client_repo import ClientRepository
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/v1", tags=["clients"])
+
+
+@router.get("/tts-preview")
+async def tts_preview(
+    text: str = Query(..., max_length=500),
+    voice: str = Query(default="aura-asteria-en"),
+):
+    """Generate a TTS audio preview using Deepgram. Returns audio/mpeg stream."""
+    if not settings.deepgram_api_key:
+        raise HTTPException(status_code=503, detail="Deepgram not configured")
+
+    async def stream_audio():
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            async with client.stream(
+                "POST",
+                f"https://api.deepgram.com/v1/speak?model={voice}",
+                json={"text": text},
+                headers={
+                    "Authorization": f"Token {settings.deepgram_api_key}",
+                    "Content-Type": "application/json",
+                },
+            ) as resp:
+                if resp.status_code != 200:
+                    raise HTTPException(status_code=502, detail="TTS generation failed")
+                async for chunk in resp.aiter_bytes(chunk_size=4096):
+                    yield chunk
+
+    return StreamingResponse(stream_audio(), media_type="audio/mpeg")
 
 
 def _generate_client_id(business_name: str) -> str:

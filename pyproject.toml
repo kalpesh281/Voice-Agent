@@ -1,56 +1,54 @@
-[tool.poetry]
+[project]
 name = "voice-booking-agent"
 version = "2.0.0"
 description = "Multi-category voice booking agent — Deepgram + LangGraph + MongoDB"
-authors = ["Kalpesh"]
-packages = [{include = "app"}]
+authors = [{name = "Kalpesh"}]
+requires-python = ">=3.11"
+dependencies = [
+    # LLM & Agent
+    "langchain>=0.3",
+    "langchain-openrouter>=0.1",
+    "langgraph>=0.4",
+    "langgraph-checkpoint-mongodb>=0.3",
+    "tiktoken>=0.7",
+    # Voice
+    "deepgram-sdk>=3.0",
+    "sounddevice>=0.5",
+    "soundfile>=0.13",
+    "numpy>=2.0",
+    # Database
+    "motor>=3.0",
+    "pymongo[srv]>=4.0",
+    # Config & Models
+    "pydantic>=2.0",
+    "pydantic-settings>=2.0",
+    "python-dotenv>=1.0",
+    # CLI
+    "rich>=13.0",
+    # Security
+    "cryptography>=42.0",
+    # API
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.30",
+    # Async
+    "aiofiles>=24.0",
+    "langchain-core>=1.4.0",
+    # Auth
+    "bcrypt>=4.0",
+    "itsdangerous>=2.1",
+]
 
-[tool.poetry.dependencies]
-python = "^3.11"
-
-# LLM & Agent
-langchain = ">=0.3"
-langchain-openai = ">=0.3"
-langgraph = ">=0.4"
-langgraph-checkpoint-mongodb = ">=0.3"
-tiktoken = ">=0.7"
-
-# Voice
-deepgram-sdk = ">=3.0"
-sounddevice = "^0.5"
-soundfile = "^0.13"
-numpy = "^2.0"
-
-# Database
-motor = ">=3.0"
-pymongo = {version = ">=4.0", extras = ["srv"]}
-
-# Config & Models
-pydantic = ">=2.0"
-pydantic-settings = ">=2.0"
-python-dotenv = "^1.0"
-
-# CLI
-rich = "^13.0"
-
-# Security
-cryptography = ">=42.0"
-bcrypt = ">=4.0"
-itsdangerous = ">=2.1"
-
-# API
-fastapi = ">=0.115"
-uvicorn = {version = ">=0.30", extras = ["standard"]}
-
-# Async
-aiofiles = ">=24.0"
-
-[tool.poetry.group.dev.dependencies]
-pytest = "^8.0"
-pytest-asyncio = "^0.23"
-mongomock-motor = ">=0.0.30"
-ruff = ">=0.4"
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.23",
+    "mongomock-motor>=0.0.30",
+    "ruff>=0.4",
+]
 
 [build-system]
-requires = ["poetry-core"]
-build-backend = "poetry.core.masonry.api"
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["app"]

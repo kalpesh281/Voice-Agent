@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef } from 'react'
 import { useDispatch } from 'react-redux'
 import {
   setStatus, addMessage, updateCollectedConfig,
-  setComplete, setError,
+  setComplete, setError, setReviewMode, setConfirmError,
 } from '../features/onboarding/onboardSlice'
 
 export default function useOnboardingSocket(sessionId) {
@@ -45,8 +45,17 @@ export default function useOnboardingSocket(sessionId) {
             }
             break
 
+          case 'review_card':
+            dispatch(addMessage({ role: 'review_card', text: '' }))
+            dispatch(setReviewMode())
+            break
+
           case 'complete':
             dispatch(setComplete(msg.client_id))
+            break
+
+          case 'confirm_error':
+            dispatch(setConfirmError(msg.message))
             break
 
           case 'error':
@@ -61,7 +70,6 @@ export default function useOnboardingSocket(sessionId) {
     ws.onclose = () => {
       console.log('[Onboard WS] Closed, intentional:', intentionalClose.current)
       if (!intentionalClose.current) {
-        // Don't set to idle — would trigger reconnect loop
         dispatch(setStatus('error'))
       }
     }
@@ -74,11 +82,22 @@ export default function useOnboardingSocket(sessionId) {
   }, [sessionId, dispatch])
 
   const sendMessage = useCallback((text) => {
+    // Always add to UI immediately — decoupled from WS state
+    dispatch(addMessage({ role: 'user', text }))
     if (wsRef.current?.readyState === WebSocket.OPEN) {
-      dispatch(addMessage({ role: 'user', text }))
       wsRef.current.send(JSON.stringify({ type: 'message', text }))
+    } else {
+      dispatch(setError('Connection lost. Please refresh the page.'))
     }
   }, [dispatch])
+
+  const sendConfirm = useCallback((config) => {
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({ type: 'confirm', config }))
+      return true
+    }
+    return false
+  }, [])
 
   const disconnect = useCallback(() => {
     intentionalClose.current = true
@@ -94,5 +113,5 @@ export default function useOnboardingSocket(sessionId) {
     }
   }, [])
 
-  return { connect, disconnect, sendMessage }
+  return { connect, disconnect, sendMessage, sendConfirm }
 }

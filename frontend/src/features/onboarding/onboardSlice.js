@@ -3,12 +3,14 @@ import { createSlice } from '@reduxjs/toolkit'
 const onboardSlice = createSlice({
   name: 'onboard',
   initialState: {
-    messages: [],        // { role: 'user'|'agent', text, timestamp }
+    messages: [],        // { role: 'user'|'agent'|'review_card', text, timestamp }
     sessionId: null,
-    status: 'idle',      // idle | connecting | chatting | complete | error
+    status: 'idle',      // idle | connecting | chatting | reviewing | complete | error
     collectedConfig: {}, // live preview of extracted fields
     error: null,
-    clientId: null,      // set on completion
+    confirmError: null,  // error shown on the launch button
+    clientId: null,
+    isReviewMode: false,
   },
   reducers: {
     setSessionId(state, action) {
@@ -29,9 +31,16 @@ const onboardSlice = createSlice({
         state.collectedConfig[field] = value
       }
     },
+    setReviewMode(state) {
+      state.isReviewMode = true
+      state.status = 'reviewing'
+    },
     setComplete(state, action) {
       state.status = 'complete'
       state.clientId = action.payload
+    },
+    setConfirmError(state, action) {
+      state.confirmError = action.payload  // resets confirming without killing the whole session
     },
     setError(state, action) {
       state.status = 'error'
@@ -44,13 +53,15 @@ const onboardSlice = createSlice({
       state.collectedConfig = {}
       state.error = null
       state.clientId = null
+      state.isReviewMode = false
     },
   },
 })
 
 export const {
   setSessionId, setStatus, addMessage,
-  updateCollectedConfig, setComplete, setError, resetOnboarding,
+  updateCollectedConfig, setComplete, setError, setConfirmError,
+  setReviewMode, resetOnboarding,
 } = onboardSlice.actions
 
 export default onboardSlice.reducer

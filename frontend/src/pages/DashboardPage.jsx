@@ -16,7 +16,7 @@ export default function DashboardPage() {
   const clientId = useSelector((s) => s.auth.user?.client_id)
 
   const { initContext, enqueueAudio, clearQueue, cleanup: cleanupPlayback } = useAudioPlayback()
-  const { connect, disconnect, sendAudio } = useWebSocket(clientId, enqueueAudio)
+  const { connect, disconnect, sendAudio } = useWebSocket(clientId, enqueueAudio, clearQueue)
   const { startCapture, stopCapture } = useAudioCapture(sendAudio)
 
   // Connect: init audio context (user gesture), connect WS, start mic

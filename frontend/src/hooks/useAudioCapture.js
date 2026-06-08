@@ -1,10 +1,13 @@
 import { useCallback, useRef } from 'react'
 import { useDispatch } from 'react-redux'
 import { setMicOn, updateWaveform } from '../features/voice/voiceSlice'
-import { float32ToInt16 } from '../utils/audioUtils'
+import { float32ToInt16, resampleTo16k } from '../utils/audioUtils'
 
 const SAMPLE_RATE = 16000
 const BUFFER_SIZE = 4096
+// Software boost applied on top of the browser's auto-gain. Helps quiet mics /
+// users sitting back from the laptop reach a level Deepgram transcribes well.
+const INPUT_GAIN = 1.6
 
 export default function useAudioCapture(onAudioChunk) {
   const dispatch = useDispatch()
@@ -22,6 +25,7 @@ export default function useAudioCapture(onAudioChunk) {
           channelCount: 1,
           echoCancellation: true,
           noiseSuppression: true,
+          autoGainControl: true,  // normalize quiet/loud input automatically
         },
       })
       streamRef.current = stream
@@ -44,7 +48,15 @@ export default function useAudioCapture(onAudioChunk) {
 
       processor.onaudioprocess = (e) => {
         const inputData = e.inputBuffer.getChannelData(0)
-        const pcmBuffer = float32ToInt16(inputData)
+        // Resample from the context's ACTUAL rate to a true 16kHz — the browser
+        // may have ignored our 16000 request and be running at 44.1/48kHz.
+        const resampled = resampleTo16k(inputData, audioContext.sampleRate, SAMPLE_RATE)
+        // Apply a gentle gain boost (float32ToInt16 clamps, so peaks won't wrap)
+        const boosted = new Float32Array(resampled.length)
+        for (let i = 0; i < resampled.length; i++) {
+          boosted[i] = resampled[i] * INPUT_GAIN
+        }
+        const pcmBuffer = float32ToInt16(boosted)
         onAudioChunk?.(pcmBuffer)
       }
 

@@ -4,7 +4,7 @@ import { setStatus, setConnected, addUserMessage, addAgentMessage, addToolCall, 
 import { setSearchResults, setSelectedRoom, setAvailability, setConfirmedBooking } from '../features/booking/bookingSlice'
 import { setClientFromWs } from '../features/client/clientSlice'
 
-export default function useWebSocket(clientId, onAudioReceived) {
+export default function useWebSocket(clientId, onAudioReceived, onInterrupt) {
   const dispatch = useDispatch()
   const wsRef = useRef(null)
   const reconnectTimer = useRef(null)
@@ -46,6 +46,10 @@ export default function useWebSocket(clientId, onAudioReceived) {
             break
           case 'state':
             dispatch(setStatus(msg.state))
+            break
+          case 'interrupt':
+            // Barge-in: agent was cut off — stop playback immediately
+            onInterrupt?.()
             break
           case 'user_transcript':
             dispatch(addUserMessage(msg.text))
@@ -90,7 +94,7 @@ export default function useWebSocket(clientId, onAudioReceived) {
     }
 
     wsRef.current = ws
-  }, [clientId, dispatch, onAudioReceived])
+  }, [clientId, dispatch, onAudioReceived, onInterrupt])
 
   const disconnect = useCallback(() => {
     intentionalClose.current = true

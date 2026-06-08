@@ -178,6 +178,17 @@ async def connect_client(uri: str, database: str) -> ReadOnlyDatabase:
     return _client_db
 
 
+async def connect_client_writable(uri: str, database: str) -> AsyncIOMotorDatabase:
+    """Connect to a client's database with full write access.
+
+    FOR ADMIN/SEED SCRIPTS ONLY. Never use this in agent or API code.
+    """
+    global _client_motor, _client_db
+    _client_motor, raw_db = await _connect_one(uri, database, "Client (writable)")
+    _client_db = ReadOnlyDatabase(raw_db)  # keep get_client_db() safe for any runtime callers
+    return raw_db
+
+
 async def disconnect():
     global _platform_motor, _platform_db, _client_motor, _client_db
 

@@ -8,3 +8,6 @@ data/bookings.json
 .mypy_cache/
 .pytest_cache/
 docs/
+GUIDE.md
+uv.lock
+.python-version

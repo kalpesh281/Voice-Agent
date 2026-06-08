@@ -2,19 +2,138 @@ import { useEffect, useRef, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useSelector, useDispatch } from 'react-redux'
 import { useNavigate } from 'react-router-dom'
-import { Send, Radio, Loader2, CheckCircle2, Sparkles } from 'lucide-react'
-import { setSessionId, resetOnboarding } from '../features/onboarding/onboardSlice'
+import { Send, Radio, Loader2, CheckCircle2, Sparkles, Play, Square, Rocket, Edit3 } from 'lucide-react'
+import ReactMarkdown from 'react-markdown'
+import { setSessionId, resetOnboarding, setConfirmError } from '../features/onboarding/onboardSlice'
 import { fetchMe } from '../features/auth/authSlice'
 import useOnboardingSocket from '../hooks/useOnboardingSocket'
+
+function cleanGreeting(raw) {
+  return (raw || '')
+    .replace(/^[\s>]+/, '')   // leading > blockquotes
+    .replace(/\*+/g, '')      // * and ** markers
+    .replace(/^['"]|['"]$/g, '') // surrounding quotes
+    .trim()
+}
+
+function GreetingAudioPreview({ text, voice }) {
+  text = cleanGreeting(text)
+  const [playing, setPlaying] = useState(false)
+  const [loading, setLoading] = useState(false)
+  const audioRef = useRef(null)
+
+  const toggle = async () => {
+    if (playing) {
+      audioRef.current?.pause()
+      audioRef.current = null
+      setPlaying(false)
+      return
+    }
+    setLoading(true)
+    try {
+      const params = new URLSearchParams({ text, voice: voice || 'aura-asteria-en' })
+      const res = await fetch(`/api/v1/tts-preview?${params}`)
+      if (!res.ok) throw new Error('TTS failed')
+      const blob = await res.blob()
+      const url = URL.createObjectURL(blob)
+      const audio = new Audio(url)
+      audioRef.current = audio
+      audio.onended = () => { setPlaying(false); URL.revokeObjectURL(url) }
+      audio.play()
+      setPlaying(true)
+    } catch {
+      setPlaying(false)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  return (
+    <div className="mt-4 p-3 rounded-xl bg-emerald-50 border border-emerald-100">
+      <p className="text-[10px] text-emerald-600 font-medium uppercase tracking-wider mb-2">Voice Preview</p>
+      <p className="text-xs text-gray-500 italic mb-3 leading-relaxed">"{text}"</p>
+      <button
+        onClick={toggle}
+        disabled={loading}
+        className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-emerald-600 text-white text-xs font-medium hover:bg-emerald-700 disabled:opacity-50 transition-all"
+      >
+        {loading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : playing ? <Square className="w-3.5 h-3.5" /> : <Play className="w-3.5 h-3.5" />}
+        {loading ? 'Generating…' : playing ? 'Stop' : 'Play Greeting'}
+      </button>
+    </div>
+  )
+}
+
+const REVIEW_FIELDS = [
+  { section: 'Business', fields: [
+    { label: 'Business Name', key: 'business_name' },
+    { label: 'Category', key: 'business_category' },
+    { label: 'Location', key: 'business_location' },
+  ]},
+  { section: 'Voice Agent', fields: [
+    { label: 'Agent Name', key: 'agent_name' },
+    { label: 'TTS Voice', key: 'tts_voice' },
+    { label: 'Greeting', key: 'greeting_template' },
+  ]},
+  { section: 'Database', fields: [
+    { label: 'Database Name', key: 'database_name' },
+    { label: 'Collection', key: 'resources_collection' },
+    { label: 'Price Field', key: 'resource_price_field' },
+  ]},
+]
+
+function ReviewCard({ config, onChange }) {
+  const set = (key, val) => onChange(prev => ({ ...prev, [key]: val }))
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 16, scale: 0.97 }}
+      animate={{ opacity: 1, y: 0, scale: 1 }}
+      transition={{ duration: 0.35, ease: [0.22, 1, 0.36, 1] }}
+      className="w-full max-w-[92%] rounded-2xl border border-emerald-200 bg-white shadow-sm overflow-hidden"
+    >
+      {/* Header */}
+      <div className="px-4 py-3 bg-emerald-50 border-b border-emerald-100 flex items-center gap-2">
+        <Edit3 className="w-4 h-4 text-emerald-600" />
+        <span className="text-sm font-semibold text-emerald-800">Review & Edit Your Config</span>
+        <span className="ml-auto text-[10px] text-emerald-500 uppercase tracking-wider">All fields editable</span>
+      </div>
+
+      {/* Sections */}
+      <div className="divide-y divide-gray-100">
+        {REVIEW_FIELDS.map(({ section, fields }) => (
+          <div key={section} className="px-4 py-3">
+            <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-2">{section}</p>
+            <div className="space-y-2">
+              {fields.map(({ label, key }) => (
+                <div key={key} className="flex items-center gap-3">
+                  <span className="text-xs text-gray-500 w-28 shrink-0">{label}</span>
+                  <input
+                    value={config[key] || ''}
+                    onChange={e => set(key, e.target.value)}
+                    placeholder="—"
+                    className="flex-1 text-xs text-gray-900 bg-gray-50 border border-gray-200 rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-emerald-400/30 focus:border-emerald-400 transition-all placeholder:text-gray-300"
+                  />
+                </div>
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+    </motion.div>
+  )
+}
 
 export default function OnboardingPage() {
   const dispatch = useDispatch()
   const navigate = useNavigate()
-  const { messages, sessionId, status, collectedConfig, clientId } = useSelector((s) => s.onboard)
+  const { messages, sessionId, status, collectedConfig, isReviewMode, confirmError } = useSelector(s => s.onboard)
   const user = useSelector((s) => s.auth.user)
 
   const [input, setInput] = useState('')
-  const [waiting, setWaiting] = useState(false) // true while waiting for bot reply
+  const [waiting, setWaiting] = useState(false)
+  const [reviewEdits, setReviewEdits] = useState(null)
+  const [confirming, setConfirming] = useState(false)
   const messagesEndRef = useRef(null)
   const inputRef = useRef(null)
 
@@ -25,7 +144,27 @@ export default function OnboardingPage() {
     }
   }, [sessionId, dispatch])
 
-  const { connect, disconnect, sendMessage } = useOnboardingSocket(sessionId)
+  const { connect, disconnect, sendMessage, sendConfirm } = useOnboardingSocket(sessionId)
+
+  // Initialise review edits when review mode activates
+  useEffect(() => {
+    if (isReviewMode && !reviewEdits) {
+      setReviewEdits({ ...collectedConfig })
+    }
+  }, [isReviewMode, collectedConfig, reviewEdits])
+
+  const handleConfirm = async () => {
+    if (confirming) return
+    // Clear any previous error first so a repeat of the *same* error still
+    // re-triggers the reset effect (which keys off confirmError changing).
+    dispatch(setConfirmError(null))
+    setConfirming(true)
+    const sent = sendConfirm(reviewEdits || collectedConfig)
+    if (!sent) {
+      // WebSocket isn't open — the click would otherwise hang on "Launching…" forever.
+      dispatch(setConfirmError('Connection lost. Please refresh the page and try again.'))
+    }
+  }
 
   // Auto-connect once when session ID is ready
   const hasConnected = useRef(false)
@@ -50,14 +189,14 @@ export default function OnboardingPage() {
 
   // On complete, refresh auth and redirect
   useEffect(() => {
-    if (status === 'complete' && clientId) {
+    if (status === 'complete') {
       const timer = setTimeout(async () => {
         await dispatch(fetchMe())
         navigate('/dashboard', { replace: true })
       }, 2000)
       return () => clearTimeout(timer)
     }
-  }, [status, clientId, dispatch, navigate])
+  }, [status, dispatch, navigate])
 
   const handleSend = () => {
     const text = input.trim()
@@ -70,13 +209,26 @@ export default function OnboardingPage() {
     }
   }
 
-  // Reset waiting when agent replies
+  // Reset waiting on any agent reply, review card, or error
   useEffect(() => {
-    if (messages.length > 0 && messages[messages.length - 1]?.role === 'agent') {
+    const last = messages[messages.length - 1]
+    if (last?.role === 'agent' || last?.role === 'review_card') {
       setWaiting(false)
-      inputRef.current?.focus()
+      if (last.role === 'agent') inputRef.current?.focus()
     }
   }, [messages.length])
+
+  useEffect(() => {
+    if (status === 'error') {
+      setWaiting(false)
+      setConfirming(false)  // socket dropped mid-launch — don't leave the button spinning
+    }
+  }, [status])
+
+  // Reset confirming when a confirm_error comes back
+  useEffect(() => {
+    if (confirmError) setConfirming(false)
+  }, [confirmError])
 
   const handleKeyDown = (e) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -122,25 +274,50 @@ export default function OnboardingPage() {
           {/* Messages */}
           <div ref={scrollContainerRef} className="flex-1 overflow-y-auto overflow-x-hidden px-6 py-5 space-y-4 scrollbar-hide" style={{ minHeight: 0 }}>
             <AnimatePresence initial={false}>
-              {messages.map((msg, i) => (
-                <motion.div
-                  key={i}
-                  initial={{ opacity: 0, y: 8 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.25 }}
-                  className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
-                >
-                  <div
-                    className={`max-w-[85%] px-4 py-3 text-sm leading-relaxed whitespace-pre-wrap break-words overflow-hidden ${
-                      msg.role === 'user'
-                        ? 'bg-gray-100 border border-gray-200 rounded-2xl rounded-tr-sm text-gray-800'
-                        : 'bg-emerald-50 border border-emerald-100 rounded-2xl rounded-tl-sm text-gray-700'
-                    }`}
+              {messages.map((msg, i) => {
+                if (msg.role === 'review_card') {
+                  return (
+                    <motion.div key={i} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3 }} className="flex w-full justify-start">
+                      <ReviewCard
+                        config={reviewEdits || collectedConfig}
+                        onChange={setReviewEdits}
+                      />
+                    </motion.div>
+                  )
+                }
+                return (
+                  <motion.div
+                    key={i}
+                    initial={{ opacity: 0, y: 8 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.25 }}
+                    className={`flex w-full ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
                   >
-                    {msg.text}
-                  </div>
-                </motion.div>
-              ))}
+                    <div
+                      className={`max-w-[85%] px-4 py-3 text-sm leading-relaxed break-words overflow-hidden ${
+                        msg.role === 'user'
+                          ? 'bg-gray-100 border border-gray-200 rounded-2xl rounded-tr-sm text-gray-800 whitespace-pre-wrap'
+                          : 'bg-emerald-50 border border-emerald-100 rounded-2xl rounded-tl-sm text-gray-700'
+                      }`}
+                    >
+                      {msg.role === 'user' ? msg.text : (
+                        <ReactMarkdown
+                          components={{
+                            p: ({ children }) => <p className="mb-1 last:mb-0">{children}</p>,
+                            strong: ({ children }) => <strong className="font-semibold text-gray-900">{children}</strong>,
+                            ul: ({ children }) => <ul className="list-disc pl-4 my-1 space-y-0.5">{children}</ul>,
+                            ol: ({ children }) => <ol className="list-decimal pl-4 my-1 space-y-0.5">{children}</ol>,
+                            li: ({ children }) => <li className="text-sm">{children}</li>,
+                            code: ({ children }) => <code className="bg-emerald-100 px-1 py-0.5 rounded text-xs font-mono">{children}</code>,
+                          }}
+                        >
+                          {msg.text}
+                        </ReactMarkdown>
+                      )}
+                    </div>
+                  </motion.div>
+                )
+              })}
             </AnimatePresence>
 
             {/* Typing indicator when waiting for agent */}
@@ -172,39 +349,72 @@ export default function OnboardingPage() {
             <div ref={messagesEndRef} />
           </div>
 
-          {/* Input */}
+          {/* Bottom bar — textarea or launch button */}
           <div className="shrink-0 px-6 py-4 border-t border-gray-100 bg-gray-50/50">
-            <div className="flex items-end gap-3">
-              <textarea
-                ref={inputRef}
-                value={input}
-                onChange={(e) => {
-                  setInput(e.target.value)
-                  // Auto-resize: reset height then set to scrollHeight
-                  e.target.style.height = 'auto'
-                  e.target.style.height = Math.min(e.target.scrollHeight, 120) + 'px'
-                }}
-                onKeyDown={handleKeyDown}
-                disabled={status === 'complete' || waiting}
-                placeholder={status === 'complete' ? 'Setup complete!' : 'Type your reply...'}
-                rows={1}
-                className="flex-1 px-4 py-2.5 rounded-xl border border-gray-200 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-400 transition-all disabled:opacity-50 resize-none overflow-y-auto"
-                style={{ maxHeight: '120px' }}
-              />
-              <motion.button
-                whileHover={{ scale: 1.05 }}
-                whileTap={{ scale: 0.95 }}
-                onClick={() => {
-                  handleSend()
-                  // Reset textarea height after send
-                  if (inputRef.current) inputRef.current.style.height = 'auto'
-                }}
-                disabled={!input.trim() || status === 'complete' || waiting}
-                className="w-10 h-10 shrink-0 rounded-xl bg-emerald-600 text-white flex items-center justify-center hover:bg-emerald-700 disabled:opacity-40 transition-all cursor-pointer"
-              >
-                <Send className="w-4 h-4" />
-              </motion.button>
-            </div>
+            <AnimatePresence mode="wait">
+              {isReviewMode ? (
+                <motion.button
+                  key="launch"
+                  initial={{ opacity: 0, y: 10, scale: 0.96 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  exit={{ opacity: 0, y: -6, scale: 0.96 }}
+                  transition={{ duration: 0.3, ease: [0.22, 1, 0.36, 1] }}
+                  whileHover={{ scale: 1.015 }}
+                  whileTap={{ scale: 0.985 }}
+                  onClick={handleConfirm}
+                  disabled={confirming || status === 'complete'}
+                  className={`w-full h-12 rounded-xl font-semibold text-sm flex flex-col items-center justify-center gap-0.5 transition-colors shadow-sm cursor-pointer disabled:opacity-60 ${confirmError ? 'bg-red-500 hover:bg-red-600 shadow-red-200' : 'bg-emerald-600 hover:bg-emerald-700 shadow-emerald-200'} text-white`}
+                >
+                  {confirming ? (
+                    <span className="flex items-center gap-2"><Loader2 className="w-4 h-4 animate-spin" /> Launching your agent…</span>
+                  ) : confirmError ? (
+                    <>
+                      <span className="flex items-center gap-2"><Rocket className="w-4 h-4" /> Try Again</span>
+                      <span className="text-[10px] opacity-80">{confirmError}</span>
+                    </>
+                  ) : (
+                    <span className="flex items-center gap-2"><Rocket className="w-4 h-4" /> Go Live — Launch My Agent</span>
+                  )}
+                </motion.button>
+              ) : (
+                <motion.div
+                  key="input"
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -6 }}
+                  transition={{ duration: 0.25 }}
+                  className="flex items-end gap-3"
+                >
+                  <textarea
+                    ref={inputRef}
+                    value={input}
+                    onChange={(e) => {
+                      setInput(e.target.value)
+                      e.target.style.height = 'auto'
+                      e.target.style.height = Math.min(e.target.scrollHeight, 120) + 'px'
+                    }}
+                    onKeyDown={handleKeyDown}
+                    disabled={status === 'complete' || waiting}
+                    placeholder={status === 'complete' ? 'Setup complete!' : 'Type your reply...'}
+                    rows={1}
+                    className="flex-1 px-4 py-2.5 rounded-xl border border-gray-200 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-400 transition-all disabled:opacity-50 resize-none overflow-y-auto"
+                    style={{ maxHeight: '120px' }}
+                  />
+                  <motion.button
+                    whileHover={{ scale: 1.05 }}
+                    whileTap={{ scale: 0.95 }}
+                    onClick={() => {
+                      handleSend()
+                      if (inputRef.current) inputRef.current.style.height = 'auto'
+                    }}
+                    disabled={!input.trim() || status === 'complete' || waiting}
+                    className="w-10 h-10 shrink-0 rounded-xl bg-emerald-600 text-white flex items-center justify-center hover:bg-emerald-700 disabled:opacity-40 transition-all cursor-pointer"
+                  >
+                    <Send className="w-4 h-4" />
+                  </motion.button>
+                </motion.div>
+              )}
+            </AnimatePresence>
           </div>
         </div>
 
@@ -235,10 +445,10 @@ export default function OnboardingPage() {
 
             {/* Greeting preview */}
             {collectedConfig.greeting_template && (
-              <div className="mt-4 p-3 rounded-xl bg-emerald-50 border border-emerald-100">
-                <p className="text-[10px] text-emerald-600 font-medium uppercase tracking-wider mb-1">Greeting Preview</p>
-                <p className="text-sm text-gray-700 italic">"{collectedConfig.greeting_template}"</p>
-              </div>
+              <GreetingAudioPreview
+                text={collectedConfig.greeting_template}
+                voice={collectedConfig.tts_voice}
+              />
             )}
           </motion.div>
 

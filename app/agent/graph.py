@@ -6,8 +6,8 @@ Architecture:
 
 import logging
 
-from langchain_core.messages import SystemMessage
-from langchain_openai import ChatOpenAI
+from langchain_core.messages import SystemMessage, trim_messages
+from langchain_openrouter import ChatOpenRouter
 from langgraph.graph import END, StateGraph
 from langgraph.prebuilt import ToolNode
 from pymongo import MongoClient
@@ -29,11 +29,10 @@ def build_graph(config: ClientConfig, app_settings: Settings):
     tools = build_tools(config)
     system_prompt = build_system_prompt(config)
 
-    llm = ChatOpenAI(
+    llm = ChatOpenRouter(
         model=app_settings.llm_model,
         temperature=app_settings.llm_temperature,
-        api_key=app_settings.openai_api_key,
-        streaming=True,
+        api_key=app_settings.openrouter_api_key,
     )
     llm_with_tools = llm.bind_tools(tools)
 
@@ -42,8 +41,26 @@ def build_graph(config: ClientConfig, app_settings: Settings):
     # ── Graph nodes ──
 
     async def respond(state: AgentState) -> dict:
-        """Invoke the LLM with the conversation history and tools."""
-        messages = [SystemMessage(content=system_prompt)] + state["messages"]
+        """Invoke the LLM with the conversation history and tools.
+
+        On long calls the checkpointer keeps growing the message history, which
+        would slowly inflate latency and token cost on every turn. We feed the
+        LLM only a rolling window of the most recent messages (the system prompt
+        carries the durable context), keeping per-turn cost flat no matter how
+        long the conversation runs. Full history is still persisted by the
+        checkpointer; we just don't resend all of it each turn.
+        """
+        history = trim_messages(
+            state["messages"],
+            strategy="last",
+            token_counter=len,        # count messages, not tokens — cheap & predictable
+            max_tokens=24,            # keep the last ~12 exchanges
+            start_on="human",         # never start on an orphaned tool/ai message
+            end_on=("human", "tool", "ai"),
+            include_system=False,
+            allow_partial=False,
+        )
+        messages = [SystemMessage(content=system_prompt)] + history
         response = await llm_with_tools.ainvoke(messages)
         return {"messages": [response]}
 

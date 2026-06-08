@@ -12,6 +12,28 @@ export function float32ToInt16(float32Array) {
 }
 
 /**
+ * Resample a Float32 buffer from `inputRate` down to `targetRate` (default 16k)
+ * using linear interpolation. Browsers often ignore AudioContext({sampleRate})
+ * and run at 44.1/48kHz; sending that to Deepgram while claiming 16kHz makes
+ * speech sound sped-up and transcribe very poorly. This guarantees true 16kHz.
+ */
+export function resampleTo16k(float32Array, inputRate, targetRate = 16000) {
+  if (!inputRate || inputRate === targetRate) return float32Array
+  const ratio = inputRate / targetRate
+  const newLength = Math.round(float32Array.length / ratio)
+  const result = new Float32Array(newLength)
+  const lastIdx = float32Array.length - 1
+  for (let i = 0; i < newLength; i++) {
+    const pos = i * ratio
+    const i0 = Math.floor(pos)
+    const i1 = Math.min(i0 + 1, lastIdx)
+    const frac = pos - i0
+    result[i] = float32Array[i0] * (1 - frac) + float32Array[i1] * frac
+  }
+  return result
+}
+
+/**
  * Convert Int16 PCM bytes to Float32 for Web Audio API playback.
  */
 export function int16ToFloat32(int16Buffer) {
