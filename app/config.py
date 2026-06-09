@@ -27,8 +27,18 @@ class Settings(BaseSettings):
 
     # OpenRouter (LLM via LangChain)
     openrouter_api_key: str
-    llm_model: str = "openrouter/owl-alpha"
+    # Free, fast, reliable tool-calling model. The previous default
+    # "openrouter/owl-alpha" is a stealth model — ~48s/turn and frequent 502s,
+    # which cut the agent's reply off mid-sentence over LiveKit. gpt-oss-120b:free
+    # averages ~3s/turn with consistent function calls. Override via LLM_MODEL in
+    # .env if the account gains credits (e.g. openai/gpt-4o-mini).
+    llm_model: str = "openai/gpt-oss-120b:free"
     llm_temperature: float = 0.7
+
+    # LiveKit (WebRTC transport for browser voice)
+    livekit_url: str = ""          # wss://<project>.livekit.cloud
+    livekit_api_key: str = ""
+    livekit_api_secret: str = ""
 
     # Deepgram (STT + TTS)
     deepgram_api_key: str = ""

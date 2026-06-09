@@ -12,7 +12,7 @@ dependencies = [
     "langgraph-checkpoint-mongodb>=0.3",
     "tiktoken>=0.7",
     # Voice
-    "deepgram-sdk>=3.0",
+    "deepgram-sdk==7.3.1",
     "sounddevice>=0.5",
     "soundfile>=0.13",
     "numpy>=2.0",
@@ -36,6 +36,10 @@ dependencies = [
     # Auth
     "bcrypt>=4.0",
     "itsdangerous>=2.1",
+    "livekit-agents[langchain]~=1.5",
+    "livekit-plugins-deepgram>=1.5.17",
+    "livekit-plugins-silero>=1.5.17",
+    "livekit-plugins-turn-detector>=1.5.17",
 ]
 
 [dependency-groups]

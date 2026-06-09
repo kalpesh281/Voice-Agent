@@ -2,9 +2,11 @@
 
 import logging
 import re
+from uuid import uuid4
 
 import httpx
 from fastapi import APIRouter, HTTPException, Query
+from livekit import api as lk_api
 from fastapi.responses import StreamingResponse
 
 from app.api.schemas import (
@@ -27,6 +29,58 @@ from app.db.repositories.client_repo import ClientRepository
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/v1", tags=["clients"])
+
+
+@router.get("/livekit/token")
+async def livekit_token(
+    client_id: str = Query(...),
+    identity: str = Query(...),
+):
+    """Mint a short-lived LiveKit access token for a browser to join its room.
+
+    The room is named "voice-<client_id>"; the agent worker (app/livekit_agent)
+    is dispatched into that room and reads the client_id back from the name.
+    """
+    if not (settings.livekit_url and settings.livekit_api_key and settings.livekit_api_secret):
+        raise HTTPException(status_code=503, detail="LiveKit not configured")
+
+    # Verify the client exists so we don't hand out tokens for unknown rooms.
+    config = await ClientRepository().get_by_id(client_id)
+    if config is None:
+        raise HTTPException(status_code=404, detail=f"Client '{client_id}' not found")
+
+    # UNIQUE room per call. A token's RoomConfiguration (the agent dispatch) is
+    # only honored when the room is CREATED. A fixed room name persists on the
+    # cloud between calls, so the 2nd+ call joins an existing room and the
+    # dispatch is silently ignored — the agent never joins ("stuck connecting").
+    # A fresh room name every time guarantees a creation event, so the agent is
+    # always dispatched. The worker parses client_id back out of the room name.
+    room = f"voice-{client_id}-{uuid4().hex[:8]}"
+    token = (
+        lk_api.AccessToken(settings.livekit_api_key, settings.livekit_api_secret)
+        .with_identity(identity)
+        .with_name(identity)
+        .with_grants(
+            lk_api.VideoGrants(
+                room_join=True,
+                room=room,
+                can_publish=True,
+                can_subscribe=True,
+            )
+        )
+        # Explicitly dispatch the named agent worker into this room when the
+        # browser joins. Without this we relied on auto-dispatch, which only
+        # fires on room *creation* — so the 2nd call onward (room already exists)
+        # hung on "connecting" with the agent never joining. AGENT_NAME must
+        # match the worker's @server.rtc_session(agent_name=...).
+        .with_room_config(
+            lk_api.RoomConfiguration(
+                agents=[lk_api.RoomAgentDispatch(agent_name="booking-agent")]
+            )
+        )
+        .to_jwt()
+    )
+    return {"url": settings.livekit_url, "token": token, "room": room}
 
 
 @router.get("/tts-preview")

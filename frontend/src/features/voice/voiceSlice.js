@@ -38,6 +38,12 @@ const voiceSlice = createSlice({
         timestamp: Date.now(),
       })
     },
+    // Replace the whole transcript. The LiveKit bridge rebuilds it from the
+    // live transcription segments each update (merging a turn's fragments into
+    // one bubble), so a wholesale replace is simplest and keeps it in sync.
+    replaceTranscript(state, action) {
+      state.transcript = action.payload
+    },
     addToolCall(state, action) {
       state.toolCalls.push({
         ...action.payload,
@@ -65,6 +71,7 @@ export const {
   setMicOn,
   addUserMessage,
   addAgentMessage,
+  replaceTranscript,
   addToolCall,
   updateWaveform,
   setError,

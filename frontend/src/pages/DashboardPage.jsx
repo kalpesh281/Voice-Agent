@@ -1,67 +1,60 @@
-import { useCallback, useEffect } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { useSelector, useDispatch } from 'react-redux'
-import { setStatus, setMicOn, resetConversation } from '../features/voice/voiceSlice'
+import { setStatus, setError, setConnected as setReduxConnected, resetConversation } from '../features/voice/voiceSlice'
 import { resetBooking } from '../features/booking/bookingSlice'
 import TopBar from '../components/layout/TopBar'
 import VoicePanel from '../components/layout/VoicePanel'
 import InfoPanel from '../components/layout/InfoPanel'
-import useWebSocket from '../hooks/useWebSocket'
-import useAudioCapture from '../hooks/useAudioCapture'
-import useAudioPlayback from '../hooks/useAudioPlayback'
+import LiveKitSession from '../components/voice/LiveKitSession'
 
 export default function DashboardPage() {
   const dispatch = useDispatch()
-  const isMicOn = useSelector((s) => s.voice.isMicOn)
-  const isConnected = useSelector((s) => s.voice.isConnected)
   const clientId = useSelector((s) => s.auth.user?.client_id)
 
-  const { initContext, enqueueAudio, clearQueue, cleanup: cleanupPlayback } = useAudioPlayback()
-  const { connect, disconnect, sendAudio } = useWebSocket(clientId, enqueueAudio, clearQueue)
-  const { startCapture, stopCapture } = useAudioCapture(sendAudio)
+  // LiveKit handles transport/audio; we just drive connect + mic intent here.
+  const [connected, setConnected] = useState(false)
+  const [micEnabled, setMicEnabled] = useState(true)
 
-  // Connect: init audio context (user gesture), connect WS, start mic
-  const handleConnect = useCallback(() => {
-    initContext()
-    dispatch(setStatus('connecting'))
-    connect()
-    startCapture()
-  }, [initContext, connect, startCapture, dispatch])
-
-  // Disconnect: stop everything, reset state
-  const handleDisconnect = useCallback(() => {
-    stopCapture()
-    clearQueue()
-    disconnect()
-    dispatch(resetConversation())
-    dispatch(resetBooking())
-  }, [stopCapture, clearQueue, disconnect, dispatch])
-
-  // Mute / Unmute mic
-  const handleMicToggle = useCallback(() => {
-    if (isMicOn) {
-      stopCapture()
-      dispatch(setMicOn(false))
-    } else {
-      startCapture()
-    }
-  }, [isMicOn, startCapture, stopCapture, dispatch])
-
-  // New conversation: disconnect, reset everything
-  const handleNewConversation = useCallback(() => {
-    stopCapture()
-    clearQueue()
-    disconnect()
-    dispatch(resetConversation())
-    dispatch(resetBooking())
-  }, [stopCapture, clearQueue, disconnect, dispatch])
-
+  // Always start a fresh page load disconnected — never auto-join. This also
+  // clears any state HMR/Fast-Refresh might have preserved across a dev reload.
   useEffect(() => {
-    return () => {
-      stopCapture()
-      disconnect()
-      cleanupPlayback()
-    }
-  }, [stopCapture, disconnect, cleanupPlayback])
+    setConnected(false)
+    dispatch(setReduxConnected(false))
+    dispatch(setStatus('idle'))
+  }, [dispatch])
+
+  // Connect: the button click is the user gesture WebRTC autoplay needs.
+  const handleConnect = useCallback(() => {
+    dispatch(setStatus('connecting'))
+    setMicEnabled(true)
+    setConnected(true)
+  }, [dispatch])
+
+  // Disconnect: tear down the room and reset state.
+  const handleDisconnect = useCallback(() => {
+    setConnected(false)
+    setMicEnabled(true)
+    dispatch(resetConversation())
+    dispatch(resetBooking())
+  }, [dispatch])
+
+  // Mute / unmute mic (applied to the published track inside the room).
+  const handleMicToggle = useCallback(() => {
+    setMicEnabled((v) => !v)
+  }, [])
+
+  // New conversation: same as disconnect.
+  const handleNewConversation = useCallback(() => {
+    handleDisconnect()
+  }, [handleDisconnect])
+
+  const handleSessionError = useCallback(
+    (e) => {
+      dispatch(setError(e?.response?.data?.detail || e?.message || 'Voice connection failed'))
+      setConnected(false)
+    },
+    [dispatch]
+  )
 
   return (
     <div className="h-screen flex flex-col bg-bg-primary overflow-hidden">
@@ -74,6 +67,12 @@ export default function DashboardPage() {
         />
         <InfoPanel />
       </div>
+      <LiveKitSession
+        clientId={clientId}
+        connected={connected}
+        micEnabled={micEnabled}
+        onError={handleSessionError}
+      />
     </div>
   )
 }

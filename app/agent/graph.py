@@ -34,7 +34,16 @@ def build_graph(config: ClientConfig, app_settings: Settings):
         temperature=app_settings.llm_temperature,
         api_key=app_settings.openrouter_api_key,
     )
-    llm_with_tools = llm.bind_tools(tools)
+    # Retry transient provider failures. OpenRouter intermittently returns a JSON
+    # error body ("Provider returned error", 502) instead of a completion, which
+    # raises mid-turn and — over LiveKit — leaves the agent stuck after only its
+    # preamble ("Absolutely! Let me search..."), the reply never arriving. A few
+    # exponential-backoff retries turn those blips into a brief pause, not a dead
+    # turn. (Genuine errors still surface after the attempts are exhausted.)
+    llm_with_tools = llm.bind_tools(tools).with_retry(
+        stop_after_attempt=3,
+        wait_exponential_jitter=True,
+    )
 
     tool_node = ToolNode(tools)
 
