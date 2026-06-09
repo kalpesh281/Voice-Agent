@@ -11,3 +11,12 @@ docs/
 GUIDE.md
 uv.lock
 .python-version
+
+# IDE
+.idea/
+.vscode/
+
+# Diagnostic / stray files
+.worker.log
+*.worker.log
+/package-lock.json
