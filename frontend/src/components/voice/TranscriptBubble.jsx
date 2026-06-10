@@ -1,5 +1,6 @@
 import { motion } from 'framer-motion'
 import { useSelector } from 'react-redux'
+import ReactMarkdown from 'react-markdown'
 
 export default function TranscriptBubble({ role, text, timestamp }) {
   const isUser = role === 'user'
@@ -31,7 +32,16 @@ export default function TranscriptBubble({ role, text, timestamp }) {
           }
         `}
       >
-        {text}
+        {/* User text is raw STT — render plain. The agent reply may contain
+            light Markdown (the voice gets a markdown-stripped copy), so render
+            it. `markdown-body` styles the bold/lists compactly inside a bubble. */}
+        {isUser ? (
+          text
+        ) : (
+          <div className="markdown-body">
+            <ReactMarkdown>{text}</ReactMarkdown>
+          </div>
+        )}
       </div>
     </motion.div>
   )

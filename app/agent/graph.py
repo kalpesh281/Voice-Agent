@@ -33,6 +33,11 @@ def build_graph(config: ClientConfig, app_settings: Settings):
         model=app_settings.llm_model,
         temperature=app_settings.llm_temperature,
         api_key=app_settings.openrouter_api_key,
+        # Bound a single reply. Without this, gpt-oss sometimes keeps generating
+        # past its turn — hallucinating the customer's lines and re-answering
+        # itself in an endless repeating loop (the "stuck repeating" bug). The
+        # cap turns that into at worst one truncated reply.
+        max_tokens=app_settings.llm_max_tokens,
     )
     # Retry transient provider failures. OpenRouter intermittently returns a JSON
     # error body ("Provider returned error", 502) instead of a completion, which

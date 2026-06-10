@@ -34,6 +34,12 @@ class Settings(BaseSettings):
     # .env if the account gains credits (e.g. openai/gpt-4o-mini).
     llm_model: str = "openai/gpt-oss-120b:free"
     llm_temperature: float = 0.7
+    # Hard ceiling on a single reply. Turns are meant to be 2-4 short sentences
+    # (~80 tokens), but free models like gpt-oss occasionally run away and
+    # generate BOTH sides of the dialogue — re-answering themselves in an
+    # infinite repeating loop (especially right after a tool result). Capping
+    # output bounds that failure to one over-long reply instead of a hang.
+    llm_max_tokens: int = 256
 
     # LiveKit (WebRTC transport for browser voice)
     livekit_url: str = ""          # wss://<project>.livekit.cloud

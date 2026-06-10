@@ -52,3 +52,19 @@ body {
   border-radius: 16px;
   box-shadow: 0 1px 3px rgba(0,0,0,0.06), 0 6px 20px rgba(0,0,0,0.04);
 }
+
+/* Compact Markdown rendering inside agent transcript bubbles. Tailwind's
+   preflight strips list bullets and margins, so restore just enough for
+   readable bold / lists / paragraphs without bloating the bubble. */
+.markdown-body > :first-child { margin-top: 0; }
+.markdown-body > :last-child { margin-bottom: 0; }
+.markdown-body p { margin: 0 0 0.4em; }
+.markdown-body strong { font-weight: 700; }
+.markdown-body em { font-style: italic; }
+.markdown-body ul,
+.markdown-body ol { margin: 0.25em 0; padding-left: 1.15em; }
+.markdown-body ul { list-style: disc; }
+.markdown-body ol { list-style: decimal; }
+.markdown-body li { margin: 0.15em 0; }
+.markdown-body li::marker { color: var(--color-accent); }
+.markdown-body a { color: var(--color-accent); text-decoration: underline; }

@@ -94,26 +94,41 @@ function VoiceBridge({ micEnabled }) {
   }, [micEnabled, localParticipant, dispatch])
 
   // Rebuild the conversation log from the live transcription segments. Deepgram
-  // can emit several "final" segments for ONE spoken turn (a >0.4s mid-sentence
-  // pause finalizes early), each as its own stream. We merge consecutive
-  // segments from the SAME speaker into one bubble — a turn only ends when the
-  // other speaker talks — so a sentence shows as a single message, not fragments.
+  // can emit several "final" streams for ONE spoken turn (a >0.4s mid-sentence
+  // pause finalizes early), and the agent's reply is forwarded as one stream per
+  // sentence — so a single turn is several streams. We merge consecutive streams
+  // from the SAME speaker into one bubble.
+  //
+  // We deliberately do NOT re-sort by streamInfo.timestamp: STT streams and the
+  // agent's TTS streams are timestamped by different clocks, so sorting on them
+  // scrambled turn order — it pushed the user's line ahead of the agent greeting,
+  // which then collapsed the greeting and the next reply into ONE agent bubble.
+  // useTranscriptions() already yields streams in arrival order, which IS
+  // chronological. A speaker change (or a long gap) ends a turn.
   useEffect(() => {
     const localId = localParticipant?.identity
-    const ordered = [...segments].sort(
-      (a, b) => (a.streamInfo?.timestamp || 0) - (b.streamInfo?.timestamp || 0)
-    )
+    const TURN_GAP_MS = 2500
     const merged = []
-    for (const seg of ordered) {
+    for (const seg of segments) {
       const text = seg.text?.trim()
       if (!text) continue
       const who = seg.participantInfo?.identity
       const role = who && localId && who === localId ? 'user' : 'agent'
+      const ts = seg.streamInfo?.timestamp || 0
       const last = merged[merged.length - 1]
-      if (last && last.who === who) {
-        last.text = `${last.text} ${text}`.trim()
+      // Same turn: same speaker AND (no usable timestamps OR within the gap).
+      const sameTurn =
+        last && last.who === who && (!ts || !last.ts || ts - last.ts < TURN_GAP_MS)
+      if (sameTurn) {
+        // Deepgram can re-emit an overlapping/superset final for one utterance
+        // ("I would like to" then "I would like to book a room"). Blindly
+        // appending duplicates the overlap, so keep the superset when one
+        // contains the other, else append the genuinely-new fragment.
+        if (text.includes(last.text)) last.text = text
+        else if (!last.text.includes(text)) last.text = `${last.text} ${text}`.trim()
+        if (ts) last.ts = ts
       } else {
-        merged.push({ who, role, text, timestamp: seg.streamInfo?.timestamp || Date.now() })
+        merged.push({ who, role, text, ts, timestamp: ts || Date.now() })
       }
     }
     dispatch(replaceTranscript(merged.map(({ role, text, timestamp }) => ({ role, text, timestamp }))))

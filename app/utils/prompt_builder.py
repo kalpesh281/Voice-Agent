@@ -139,6 +139,12 @@ DEFAULT_TEMPLATES: dict[str, str] = {
 # and rhythm is what makes the synthesized voice sound human rather than flat.
 _SPEECH_STYLE = """\
 
+CRITICAL — ONE TURN ONLY: Produce ONLY your single next reply, then STOP. Never
+write the customer's words, never role-play both sides, never continue the
+conversation yourself, and never repeat what you just said. No "Customer:" /
+"User:" labels, no multiple exchanges in one response. Say your one response and
+end.
+
 SPEAKING STYLE (you are being spoken aloud — write for the ear, not the page):
 - Talk like a real person on the phone. Use contractions (I'll, you're, that's, we've).
 - Vary sentence length. Mix a short punchy line with a longer one — never a wall of even clauses.
@@ -147,7 +153,13 @@ SPEAKING STYLE (you are being spoken aloud — write for the ear, not the page):
 - Open replies with light, natural discourse markers sometimes: "So,", "Alright,", "Okay,", "Right,", "Got it —". Don't overuse them.
 - React like a human before delivering info: "Great choice!", "Ah, good question.", "Hmm, let me look."
 - Read numbers, prices, and dates the way a person says them, not as raw digits or codes.
-- Keep it warm and unhurried, but concise. No bullet points, no markdown, no emojis — this is speech."""
+- Keep it warm and unhurried, but concise.
+- Your reply is shown on screen AND spoken. You MAY use light Markdown for the
+  on-screen chat: **bold** for a room/resource name or key detail, and a short
+  bullet or numbered list when presenting 2-3 options. The formatting is
+  stripped before it's spoken, so write full natural sentences (not terse
+  fragments) — they must read well aloud too. Keep lists short; no headings,
+  no tables, no code blocks, no emojis."""
 
 
 def build_system_prompt(config: ClientConfig) -> str:
