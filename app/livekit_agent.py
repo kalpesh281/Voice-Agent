@@ -339,23 +339,36 @@ async def entrypoint(ctx: agents.JobContext):
             activation_threshold=0.45,
             deactivation_threshold=0.25,
             min_silence_duration=0.55,
-            min_speech_duration=0.1,
+            # Require a brief sustained burst (0.25s) before a turn STARTS, so a
+            # momentary background-noise blip during "thinking" doesn't get
+            # treated as the user starting to speak (which kept re-opening the
+            # mic mid-turn). Real speech easily clears 0.25s; a click/cough won't.
+            min_speech_duration=0.25,
         ),
-        # VAD-based end-of-turn (NOT the MultilingualModel turn detector). That
-        # model needs PyTorch/transformers to run inference — which isn't
-        # installed (see the "[transformers] PyTorch was not found" log) — so it
-        # silently never emits "user finished", and the agent waits forever. VAD
-        # + the endpointing delays below commit a turn reliably with no torch.
-        turn_detection="vad",
-        # Bound the turn detector: wait at least 0.5s of silence before replying
-        # (so brief mid-sentence pauses don't trigger a premature response), and
-        # at most ~5s (so the agent ALWAYS replies even if the model is unsure —
-        # this is what fixes "agent never responds").
-        min_endpointing_delay=0.5,
-        max_endpointing_delay=5.0,
-        # Require a real interruption (not a cough / the agent's own echo) to
-        # barge in on the agent.
-        min_interruption_duration=0.5,
+        # All turn/interruption tuning lives in turn_handling (the old top-level
+        # kwargs are deprecated). turn_detection="vad" because the ML turn
+        # detector needs PyTorch/transformers, which isn't installed.
+        turn_handling={
+            "turn_detection": "vad",
+            # Bound end-of-turn: wait >=0.5s of silence before replying (so brief
+            # mid-sentence pauses don't trigger a premature response), at most ~5s
+            # (so the agent ALWAYS replies even if unsure — fixes "never responds").
+            "endpointing": {"min_delay": 0.5, "max_delay": 5.0},
+            "interruption": {
+                # Only let ACTUAL recognized words barge in on the agent — not raw
+                # VAD energy. Background noise / the agent's own audio leak produce
+                # energy but no words, so with min_words>0 they can no longer
+                # falsely interrupt while the agent is speaking. A real interjection
+                # ("stop", "wait, actually...") still cuts in.
+                "min_words": 2,
+                # And require the speech to be sustained, not a transient blip.
+                "min_duration": 0.6,
+                # If a false interruption slips through (brief noise), resume the
+                # agent's speech automatically after a short silence.
+                "resume_false_interruption": True,
+                "false_interruption_timeout": 1.5,
+            },
+        },
     )
 
     # ── Turn-lifecycle logging ──────────────────────────────────────────────
