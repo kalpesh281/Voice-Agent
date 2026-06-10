@@ -30,10 +30,14 @@ export default function DashboardPage() {
     setConnected(true)
   }, [dispatch])
 
-  // Disconnect: tear down the room and reset state.
+  // Disconnect: tear down the room and reset state. Clearing `connected`
+  // unmounts <LiveKitSession>, so the room's onDisconnected callback may never
+  // fire — we must clear the Redux connection flag ourselves, otherwise the
+  // MicButton stays stuck on the red "end call" state after hanging up.
   const handleDisconnect = useCallback(() => {
     setConnected(false)
     setMicEnabled(true)
+    dispatch(setReduxConnected(false))
     dispatch(resetConversation())
     dispatch(resetBooking())
   }, [dispatch])
