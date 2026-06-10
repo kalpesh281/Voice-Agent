@@ -7,12 +7,13 @@ const config = {
   listening:      { label: 'Listening',   color: '#059669' },
   thinking:       { label: 'Processing',  color: '#7C3AED' },
   agent_speaking: { label: 'Speaking',    color: '#059669' },
+  paused:         { label: 'Paused',      color: '#9CA3AF' },
 }
 
 export default function StatusIndicator() {
   const status = useSelector((s) => s.voice.status)
   const { label, color } = config[status] || config.idle
-  const isActive = status !== 'idle'
+  const isActive = status !== 'idle' && status !== 'paused'
 
   return (
     <div className="flex items-center gap-2">

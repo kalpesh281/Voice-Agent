@@ -44,11 +44,27 @@ function VoiceBridge({ micEnabled }) {
   const { state, audioTrack } = useVoiceAssistant()
   const segments = useTranscriptions()
   const { localParticipant } = useLocalParticipant()
+  // The agent reports "listening" the instant it joins — a beat before its
+  // greeting TTS starts. Hold "Connecting" until it has actually spoken once,
+  // so the status doesn't flash "Listening" → "Speaking" on connect. Resets
+  // automatically: VoiceBridge unmounts/remounts each call.
+  const hasSpokenRef = useRef(false)
 
-  // Agent lifecycle → status
+  // Agent lifecycle → status, reconciled with our own UI intent:
+  //  • muted (and not hearing the agent) → "Paused", not "Listening"
+  //  • before the first utterance → "Connecting", not a "Listening" flash
   useEffect(() => {
-    if (state) dispatch(setStatus(STATE_MAP[state] || 'idle'))
-  }, [state, dispatch])
+    if (!state) return
+    if (state === 'speaking') hasSpokenRef.current = true
+
+    if (!micEnabled && state !== 'speaking') {
+      dispatch(setStatus('paused'))
+    } else if (!hasSpokenRef.current && state !== 'speaking') {
+      dispatch(setStatus('connecting'))
+    } else {
+      dispatch(setStatus(STATE_MAP[state] || 'idle'))
+    }
+  }, [state, micEnabled, dispatch])
 
   // ── Live waveform ──────────────────────────────────────────────────────
   // Visualize the agent's voice while it speaks, otherwise the user's mic, so
