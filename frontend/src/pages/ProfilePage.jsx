@@ -1,10 +1,10 @@
 import { useState, useEffect, useCallback } from 'react'
-import { motion } from 'framer-motion'
+import { motion, AnimatePresence } from 'framer-motion'
 import { useSelector, useDispatch } from 'react-redux'
 import { useNavigate } from 'react-router-dom'
 import {
   Radio, Building2, Mic, Database, Package, AlertTriangle,
-  Save, Loader2, CheckCircle2, ArrowLeft,
+  Save, Loader2, CheckCircle2, ArrowLeft, XCircle,
 } from 'lucide-react'
 import { logout, deleteAccount } from '../features/auth/authSlice'
 import api from '../services/api'
@@ -62,6 +62,8 @@ export default function ProfilePage() {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [saveSuccess, setSaveSuccess] = useState(false)
+  // Toast feedback for save outcome: { type: 'success' | 'error', message }.
+  const [toast, setToast] = useState(null)
   const [resources, setResources] = useState([])
   const [testDbResult, setTestDbResult] = useState(null)
   const [deleteConfirm, setDeleteConfirm] = useState('')
@@ -131,12 +133,25 @@ export default function ProfilePage() {
         system_prompt_template: config.system_prompt_template || '',
       })
       setSaveSuccess(true)
+      setToast({ type: 'success', message: 'Changes saved successfully.' })
       setTimeout(() => setSaveSuccess(false), 3000)
     } catch (err) {
       console.error('Save failed:', err)
+      const detail = err.response?.data?.detail
+      const message = Array.isArray(detail)
+        ? detail.map((d) => d.msg).join(', ')
+        : detail || err.message || 'Failed to save changes.'
+      setToast({ type: 'error', message })
     }
     setSaving(false)
   }
+
+  // Auto-dismiss the toast after a few seconds.
+  useEffect(() => {
+    if (!toast) return
+    const t = setTimeout(() => setToast(null), 4000)
+    return () => clearTimeout(t)
+  }, [toast])
 
   const handleTestDb = async () => {
     setTestDbResult(null)
@@ -173,6 +188,34 @@ export default function ProfilePage() {
 
   return (
     <div className="h-screen flex flex-col bg-bg-primary">
+      {/* Save feedback toast */}
+      <AnimatePresence>
+        {toast && (
+          <motion.div
+            initial={{ opacity: 0, y: -16, x: '-50%' }}
+            animate={{ opacity: 1, y: 0, x: '-50%' }}
+            exit={{ opacity: 0, y: -16, x: '-50%' }}
+            transition={{ type: 'spring', stiffness: 400, damping: 28 }}
+            className="fixed top-4 left-1/2 z-50"
+          >
+            <div
+              className={`flex items-center gap-2.5 pl-3 pr-4 py-2.5 rounded-xl shadow-lg border text-sm font-medium ${
+                toast.type === 'success'
+                  ? 'bg-emerald-50 border-emerald-200 text-emerald-700'
+                  : 'bg-red-50 border-red-200 text-red-700'
+              }`}
+            >
+              {toast.type === 'success' ? (
+                <CheckCircle2 className="w-4 h-4 shrink-0" />
+              ) : (
+                <XCircle className="w-4 h-4 shrink-0" />
+              )}
+              <span className="max-w-sm">{toast.message}</span>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* Header */}
       <header className="h-14 px-6 flex items-center justify-between border-b border-gray-200 bg-white shrink-0">
         <div className="flex items-center gap-3">
