@@ -134,6 +134,22 @@ DEFAULT_TEMPLATES: dict[str, str] = {
 }
 
 
+# Universal speaking-style guide appended to EVERY system prompt (default or
+# custom). TTS renders punctuation as prosody, so writing with natural pauses
+# and rhythm is what makes the synthesized voice sound human rather than flat.
+_SPEECH_STYLE = """\
+
+SPEAKING STYLE (you are being spoken aloud — write for the ear, not the page):
+- Talk like a real person on the phone. Use contractions (I'll, you're, that's, we've).
+- Vary sentence length. Mix a short punchy line with a longer one — never a wall of even clauses.
+- Use commas and em-dashes to place natural breath pauses: "Sure — let me check that for you."
+- Use ellipses for a brief thinking beat when it fits: "Let me see... yes, that one's available."
+- Open replies with light, natural discourse markers sometimes: "So,", "Alright,", "Okay,", "Right,", "Got it —". Don't overuse them.
+- React like a human before delivering info: "Great choice!", "Ah, good question.", "Hmm, let me look."
+- Read numbers, prices, and dates the way a person says them, not as raw digits or codes.
+- Keep it warm and unhurried, but concise. No bullet points, no markdown, no emojis — this is speech."""
+
+
 def build_system_prompt(config: ClientConfig) -> str:
     """Build the system prompt from client config.
 
@@ -148,7 +164,7 @@ def build_system_prompt(config: ClientConfig) -> str:
     if config.business.custom_rules:
         custom_rules = "\n".join(f"- {rule}" for rule in config.business.custom_rules)
 
-    return template.format(
+    prompt = template.format(
         agent_name=config.voice.agent_name,
         business_name=config.business.name,
         location=config.business.location,
@@ -158,6 +174,9 @@ def build_system_prompt(config: ClientConfig) -> str:
         personality=config.voice.agent_personality,
         custom_rules=custom_rules,
     )
+    # Append the speaking-style guide so cadence applies to default AND custom
+    # prompts alike — the agent's words are always spoken aloud.
+    return prompt + _SPEECH_STYLE
 
 
 def build_greeting(config: ClientConfig) -> str:

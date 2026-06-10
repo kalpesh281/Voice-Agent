@@ -25,6 +25,7 @@ from dotenv import load_dotenv
 from langchain_core.messages import AIMessage, AIMessageChunk
 from livekit import agents
 from livekit.agents import AgentServer, AgentSession, Agent
+from livekit.agents.tokenize import TokenData, WordStream, WordTokenizer
 from livekit.agents.types import DEFAULT_API_CONNECT_OPTIONS, NOT_GIVEN
 from livekit.plugins import deepgram, silero, langchain
 from livekit.plugins.langchain import langgraph as _lclg
@@ -120,6 +121,53 @@ async def _build_stt_keyterms(config) -> list[str]:
     return out[:100]
 
 server = AgentServer()
+
+
+# ── Whole-sentence TTS tokenizer ────────────────────────────────────────────
+# The Deepgram TTS plugin sends ONE WebSocket "Speak" message per token it pulls
+# from its word tokenizer. The plugin's default (basic WordTokenizer) yields one
+# WORD at a time, so each word is handed to the model with almost no phrase
+# context — producing audible micro-gaps between words (the "choppy" speech).
+# Emitting each sentence as a SINGLE token lets Deepgram synthesize it as one
+# continuous, naturally coarticulated unit. The upstream AgentSession already
+# splits the LLM stream into sentences (with flush boundaries), so each segment
+# fed here is one sentence: smooth joins, negligible added latency.
+class _WholeSentenceWordStream(WordStream):
+    def __init__(self) -> None:
+        super().__init__()
+        self._buf = ""
+
+    def push_text(self, text: str) -> None:
+        self._check_not_closed()
+        self._buf += text
+
+    def _emit(self) -> None:
+        text = self._buf.strip()
+        self._buf = ""
+        if text:
+            self._event_ch.send_nowait(TokenData(token=text))
+
+    def flush(self) -> None:
+        self._check_not_closed()
+        self._emit()
+
+    def end_input(self) -> None:
+        self._emit()
+        self._do_close()
+
+    async def aclose(self) -> None:
+        self._do_close()
+
+
+class WholeSentenceWordTokenizer(WordTokenizer):
+    """Yields each flushed segment (one sentence) as a single token — see above."""
+
+    def tokenize(self, text: str, *, language: str | None = None) -> list[str]:
+        text = text.strip()
+        return [text] if text else []
+
+    def stream(self, *, language: str | None = None) -> WordStream:
+        return _WholeSentenceWordStream()
 
 
 # ── Assistant-only LangGraph adapter ────────────────────────────────────────
@@ -272,7 +320,13 @@ async def entrypoint(ctx: agents.JobContext):
             graph=graph,
             config={"configurable": {"thread_id": f"{room_name or client_id}-{uuid4().hex[:8]}"}},
         ),
-        tts=deepgram.TTS(model=settings.deepgram_tts_model),
+        # Feed Deepgram whole sentences (one Speak msg each) instead of the
+        # plugin default of one word per Speak msg — eliminates the inter-word
+        # micro-gaps that made the voice sound choppy.
+        tts=deepgram.TTS(
+            model=settings.deepgram_tts_model,
+            word_tokenizer=WholeSentenceWordTokenizer(),
+        ),
         # Noisy-room tuning. The default activation_threshold=0.5 lets background
         # noise read as continuous speech, so the VAD never reports the silence
         # that starts the end-of-turn timer — the agent then "never stops

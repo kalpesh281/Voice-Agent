@@ -44,7 +44,11 @@ class Settings(BaseSettings):
     deepgram_api_key: str = ""
     deepgram_stt_model: str = "nova-3"
     deepgram_stt_language: str = "en"
-    deepgram_tts_model: str = "aura-asteria-en"
+    # Aura-2 (vs aura-1 asteria): markedly more natural prosody, emphasis, and
+    # pacing — the single biggest lever for human-sounding cadence. Same API and
+    # latency; billed on the same per-character meter, ~2x aura-1's rate.
+    # thalia = warm, clear, conversational female voice.
+    deepgram_tts_model: str = "aura-2-thalia-en"
 
     # Audio
     mic_sample_rate: int = 16000
