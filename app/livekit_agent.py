@@ -327,14 +327,17 @@ async def entrypoint(ctx: agents.JobContext):
             model=settings.deepgram_tts_model,
             word_tokenizer=WholeSentenceWordTokenizer(),
         ),
-        # Noisy-room tuning. The default activation_threshold=0.5 lets background
-        # noise read as continuous speech, so the VAD never reports the silence
-        # that starts the end-of-turn timer — the agent then "never stops
-        # listening". Require clearer speech to start (0.6) with hysteresis to
-        # drop out cleanly (0.35), so end-of-turn is detected reliably.
+        # VAD sensitivity is a balance: too high and soft/quiet speech never
+        # crosses the bar so the agent ignores you (you have to raise your
+        # voice); too low and room hum reads as endless speech so end-of-turn
+        # never fires. 0.6 was too deaf to soft voices — 0.45 picks up a normal
+        # indoor speaking volume while staying above typical background noise.
+        # Hysteresis (lower deactivation, 0.25) keeps a turn from dropping out on
+        # brief dips mid-sentence. The browser mic already runs noise
+        # suppression + auto-gain, which cleans up the lower threshold.
         vad=silero.VAD.load(
-            activation_threshold=0.6,
-            deactivation_threshold=0.35,
+            activation_threshold=0.45,
+            deactivation_threshold=0.25,
             min_silence_duration=0.55,
             min_speech_duration=0.1,
         ),
