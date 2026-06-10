@@ -81,6 +81,20 @@ class ClientOnboardRequest(BaseModel):
     system_prompt_template: str = Field("", description="Custom system prompt override. Leave empty for default.")
 
 
+class ClientUpdateRequest(ClientOnboardRequest):
+    """Schema for editing an EXISTING client (PUT).
+
+    Same shape as onboarding, but the strict input gates are relaxed: a Settings
+    save re-sends every field, so onboarding-only minimums (e.g. phone length)
+    must not reject an edit to an unrelated field like the business name.
+    """
+
+    owner_name: str = Field("")
+    owner_phone: str = Field("")
+    business_name: str = Field(..., min_length=2)
+    resources_collection: str = Field("")
+
+
 # ──────────────────────────────────────────────
 #  Client Onboarding — Response
 # ──────────────────────────────────────────────

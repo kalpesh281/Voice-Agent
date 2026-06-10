@@ -14,6 +14,7 @@ from app.api.schemas import (
     ClientListItem,
     ClientOnboardRequest,
     ClientOnboardResponse,
+    ClientUpdateRequest,
 )
 from app.db.models import (
     BusinessDetails,
@@ -25,6 +26,7 @@ from app.db.models import (
 )
 from app.config import settings
 from app.db.repositories.client_repo import ClientRepository
+from app.utils.prompt_builder import normalize_greeting
 
 logger = logging.getLogger(__name__)
 
@@ -172,7 +174,9 @@ async def onboard_client(req: ClientOnboardRequest):
             agent_personality=req.agent_personality or (
                 "Warm, friendly, professional — speaks like a real person on a phone call"
             ),
-            greeting_template=req.greeting_template,
+            greeting_template=normalize_greeting(
+                req.greeting_template, req.business_name, req.agent_name
+            ),
             tts_voice=req.tts_voice,
         ),
         system_prompt_template=req.system_prompt_template or "",
@@ -217,7 +221,7 @@ async def get_client(client_id: str):
 
 
 @router.put("/clients/{client_id}", response_model=ClientOnboardResponse)
-async def update_client(client_id: str, req: ClientOnboardRequest):
+async def update_client(client_id: str, req: ClientUpdateRequest):
     """Update an existing client's configuration."""
     repo = ClientRepository()
     existing = await repo.get_by_id(client_id)
@@ -259,7 +263,11 @@ async def update_client(client_id: str, req: ClientOnboardRequest):
         voice=VoiceSettings(
             agent_name=req.agent_name,
             agent_personality=req.agent_personality or existing.voice.agent_personality,
-            greeting_template=req.greeting_template or existing.voice.greeting_template,
+            greeting_template=normalize_greeting(
+                req.greeting_template or existing.voice.greeting_template,
+                req.business_name,
+                req.agent_name,
+            ),
             tts_voice=req.tts_voice,
         ),
         system_prompt_template=req.system_prompt_template if req.system_prompt_template else existing.system_prompt_template,

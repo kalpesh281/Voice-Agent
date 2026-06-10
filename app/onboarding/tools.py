@@ -17,6 +17,7 @@ from app.db.models import (
 )
 from app.db.repositories.client_repo import ClientRepository
 from app.db.repositories.user_repo import UserRepository
+from app.utils.prompt_builder import normalize_greeting
 
 logger = logging.getLogger(__name__)
 
@@ -130,7 +131,12 @@ async def save_client_config(
             voice=VoiceSettings(
                 agent_name=agent_name or "Aria",
                 agent_personality=agent_personality or "Warm, friendly, professional",
-                greeting_template=greeting_template or "",
+                # Onboarding LLM tends to bake the literal name into the
+                # greeting ("welcome to UZY"); convert it to {business_name}/
+                # {agent_name} placeholders so a later rename stays in sync.
+                greeting_template=normalize_greeting(
+                    greeting_template or "", business_name, agent_name or "Aria"
+                ),
                 tts_voice=tts_voice or "aura-asteria-en",
             ),
         )

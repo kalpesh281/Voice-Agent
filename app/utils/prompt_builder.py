@@ -1,4 +1,30 @@
+import re
+
 from app.db.models import ClientConfig
+
+
+def normalize_greeting(greeting: str, business_name: str, agent_name: str) -> str:
+    """Convert literal business/agent names in a greeting into placeholders.
+
+    Onboarding (and hand-typed greetings) often bake the literal name straight
+    into the text — "welcome to UZY" — instead of using the {business_name}
+    placeholder. Because build_greeting only substitutes the {placeholders},
+    a literal name is frozen: renaming the business later never updates the
+    greeting. Swap whole-word literal occurrences back to placeholders at save
+    time so the greeting always tracks the current config.
+    """
+    if not greeting:
+        return greeting
+    out = greeting
+    for value, placeholder in (
+        (business_name, "{business_name}"),
+        (agent_name, "{agent_name}"),
+    ):
+        v = (value or "").strip()
+        if len(v) < 2:
+            continue  # too short to match safely (avoids over-replacing)
+        out = re.sub(rf"\b{re.escape(v)}\b", placeholder, out, flags=re.IGNORECASE)
+    return out
 
 # ──────────────────────────────────────────────
 #  Default system prompt templates per category

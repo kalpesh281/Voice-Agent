@@ -55,7 +55,10 @@ STEP GUIDE:
    - If validation fails, explain the error clearly and ask them to try again.
    - If they say "use platform db" or "skip" or "test mode", accept empty URI and move on.
 4. voice: Confirm or adjust agent name, personality, greeting template.
-   - Suggest a greeting: "Hello, welcome to [business_name], I'm [agent_name]..."
+   - Suggest a greeting and KEEP the literal placeholders {business_name} and
+     {agent_name} in the template — do NOT substitute the actual names. E.g.
+     "Hello, welcome to {business_name}, I'm {agent_name}, how can I help today?"
+     (They are filled in at call time, so the greeting stays correct after a rename.)
    - Ask if it sounds right or if they want to customize.
 5. review: Read back ALL collected details in a clear format. Ask for final confirmation.
 6. complete: Call save_client_config() with ALL collected fields. Celebrate — tell them their agent is ready!
