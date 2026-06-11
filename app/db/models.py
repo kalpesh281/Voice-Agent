@@ -116,7 +116,7 @@ class VoiceSettings(BaseModel):
     agent_personality: str = "Warm, friendly, professional — speaks like a real person on a phone call"
     greeting_template: str = ""
     language: str = "en"
-    tts_voice: str = "aura-asteria-en"
+    tts_voice: str = "aura-2-thalia-en"
 
 
 class ClientConfig(BaseModel):

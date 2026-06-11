@@ -111,8 +111,11 @@ def _scan_prose(messages: list) -> dict:
                 cleaner = _clean_greeting if k == "greeting_template" else _clean_value
                 config.setdefault(k, cleaner(v))
 
-        # Aura voice model anywhere in AI message
-        aura_m = re.search(r'aura-[\w]+-[\w]+', lower)
+        # Aura voice model anywhere in AI message. Match the FULL id including the
+        # trailing "-en" (and the optional "-2" generation segment) — the old
+        # `aura-[\w]+-[\w]+` stopped at "aura-2-thalia", dropping "-en" and
+        # producing an invalid model id that Deepgram rejects.
+        aura_m = re.search(r'aura(?:-2)?-[a-z]+-en', lower)
         if aura_m:
             config.setdefault("tts_voice", aura_m.group(0))
 
@@ -360,7 +363,7 @@ async def onboard_websocket_endpoint(websocket: WebSocket, session_id: str):
                             "agent_name": cfg.get("agent_name", "Aria"),
                             "agent_personality": cfg.get("agent_personality", "Warm, friendly, professional"),
                             "greeting_template": cfg.get("greeting_template", ""),
-                            "tts_voice": cfg.get("tts_voice", "aura-asteria-en"),
+                            "tts_voice": cfg.get("tts_voice", "aura-2-thalia-en"),
                             "resource_id_field": cfg.get("resource_id_field", "id"),
                             "resource_name_field": cfg.get("resource_name_field", "name"),
                             "resource_price_field": cfg.get("resource_price_field", "price"),

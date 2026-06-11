@@ -75,7 +75,7 @@ class ClientOnboardRequest(BaseModel):
         examples=["Warm, friendly Indian woman. Natural phone conversation style."],
     )
     greeting_template: str = Field("", examples=["Namaste! Welcome to {business_name}!"])
-    tts_voice: str = Field("aura-asteria-en", examples=["aura-asteria-en"])
+    tts_voice: str = Field("aura-2-thalia-en", examples=["aura-2-thalia-en"])
 
     # Custom system prompt (if empty, uses default template for the category)
     system_prompt_template: str = Field("", description="Custom system prompt override. Leave empty for default.")

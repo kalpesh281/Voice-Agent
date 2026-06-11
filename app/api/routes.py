@@ -88,7 +88,7 @@ async def livekit_token(
 @router.get("/tts-preview")
 async def tts_preview(
     text: str = Query(..., max_length=500),
-    voice: str = Query(default="aura-asteria-en"),
+    voice: str = Query(default="aura-2-thalia-en"),
 ):
     """Generate a TTS audio preview using Deepgram. Returns audio/mpeg stream."""
     if not settings.deepgram_api_key:

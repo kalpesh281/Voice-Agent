@@ -137,7 +137,7 @@ async def save_client_config(
                 greeting_template=normalize_greeting(
                     greeting_template or "", business_name, agent_name or "Aria"
                 ),
-                tts_voice=tts_voice or "aura-asteria-en",
+                tts_voice=tts_voice or "aura-2-thalia-en",
             ),
         )
 

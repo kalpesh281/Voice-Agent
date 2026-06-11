@@ -120,6 +120,20 @@ async def _build_stt_keyterms(config) -> list[str]:
         out.append(t)
     return out[:100]
 
+def _resolve_tts_voice(voice: str | None) -> str:
+    """Pick the TTS model, preferring the client's voice but upgrading legacy ones.
+
+    Only Aura-2 voices (`aura-2-*`) sound like the warm cadence we tuned for. A
+    blank field — or a legacy Aura-1 id (e.g. "aura-asteria-en") left over from
+    before the Aura-2 switch — falls back to the platform default so no client is
+    stuck on the flatter voice until they re-save their settings.
+    """
+    v = (voice or "").strip()
+    if v.startswith("aura-2-"):
+        return v
+    return settings.deepgram_tts_model
+
+
 server = AgentServer()
 
 
@@ -324,7 +338,12 @@ async def entrypoint(ctx: agents.JobContext):
         # plugin default of one word per Speak msg — eliminates the inter-word
         # micro-gaps that made the voice sound choppy.
         tts=deepgram.TTS(
-            model=settings.deepgram_tts_model,
+            # Per-client voice — each business picks its own Aura-2 voice in
+            # Settings/Onboarding (stored on config.voice.tts_voice). Older clients
+            # may still have a legacy Aura-1 id (aura-asteria-en) stored from before
+            # the Aura-2 switch; those sound flatter, so fall back to the platform
+            # default unless the client explicitly chose an Aura-2 voice.
+            model=_resolve_tts_voice(config.voice.tts_voice),
             word_tokenizer=WholeSentenceWordTokenizer(),
         ),
         # VAD sensitivity is a balance: too high and soft/quiet speech never

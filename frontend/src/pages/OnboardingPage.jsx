@@ -7,6 +7,7 @@ import ReactMarkdown from 'react-markdown'
 import { setSessionId, resetOnboarding, setConfirmError } from '../features/onboarding/onboardSlice'
 import { fetchMe } from '../features/auth/authSlice'
 import useOnboardingSocket from '../hooks/useOnboardingSocket'
+import { VOICE_OPTIONS, DEFAULT_VOICE } from '../constants/voices'
 
 function cleanGreeting(raw) {
   return (raw || '')
@@ -31,7 +32,7 @@ function GreetingAudioPreview({ text, voice }) {
     }
     setLoading(true)
     try {
-      const params = new URLSearchParams({ text, voice: voice || 'aura-asteria-en' })
+      const params = new URLSearchParams({ text, voice: voice || DEFAULT_VOICE })
       const res = await fetch(`/api/v1/tts-preview?${params}`)
       if (!res.ok) throw new Error('TTS failed')
       const blob = await res.blob()
@@ -108,12 +109,29 @@ function ReviewCard({ config, onChange }) {
               {fields.map(({ label, key }) => (
                 <div key={key} className="flex items-center gap-3">
                   <span className="text-xs text-gray-500 w-28 shrink-0">{label}</span>
-                  <input
-                    value={config[key] || ''}
-                    onChange={e => set(key, e.target.value)}
-                    placeholder="—"
-                    className="flex-1 text-xs text-gray-900 bg-gray-50 border border-gray-200 rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-emerald-400/30 focus:border-emerald-400 transition-all placeholder:text-gray-300"
-                  />
+                  {key === 'tts_voice' ? (
+                    <select
+                      value={config[key] || DEFAULT_VOICE}
+                      onChange={e => set(key, e.target.value)}
+                      className="flex-1 text-xs text-gray-900 bg-gray-50 border border-gray-200 rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-emerald-400/30 focus:border-emerald-400 transition-all"
+                    >
+                      {/* Keep an unknown/legacy voice selectable so the agent's
+                          suggestion is never silently dropped. */}
+                      {!VOICE_OPTIONS.some(o => o.value === config[key]) && config[key] && (
+                        <option value={config[key]}>{config[key]}</option>
+                      )}
+                      {VOICE_OPTIONS.map(o => (
+                        <option key={o.value} value={o.value}>{o.label}</option>
+                      ))}
+                    </select>
+                  ) : (
+                    <input
+                      value={config[key] || ''}
+                      onChange={e => set(key, e.target.value)}
+                      placeholder="—"
+                      className="flex-1 text-xs text-gray-900 bg-gray-50 border border-gray-200 rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-emerald-400/30 focus:border-emerald-400 transition-all placeholder:text-gray-300"
+                    />
+                  )}
                 </div>
               ))}
             </div>

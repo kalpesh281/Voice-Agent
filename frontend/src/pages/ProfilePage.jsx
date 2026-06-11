@@ -1,13 +1,14 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useSelector, useDispatch } from 'react-redux'
 import { useNavigate } from 'react-router-dom'
 import {
   Radio, Building2, Mic, Database, Package, AlertTriangle,
-  Save, Loader2, CheckCircle2, ArrowLeft, XCircle,
+  Save, Loader2, CheckCircle2, ArrowLeft, XCircle, Play, Square,
 } from 'lucide-react'
 import { logout, deleteAccount } from '../features/auth/authSlice'
 import api from '../services/api'
+import { VOICE_OPTIONS, DEFAULT_VOICE } from '../constants/voices'
 
 const TABS = [
   { id: 'business', label: 'Business', icon: Building2 },
@@ -48,6 +49,77 @@ function SelectField({ label, value, onChange, options }) {
           <option key={opt.value} value={opt.value}>{opt.label}</option>
         ))}
       </select>
+    </div>
+  )
+}
+
+// Resolve the greeting template's {placeholders} so the preview speaks the real
+// greeting the caller would hear (not "{business_name}"). Falls back to the same
+// default the backend's build_greeting uses when no template is set.
+function resolveGreeting(config) {
+  const biz = config?.business?.name || 'our business'
+  const agent = config?.voice?.agent_name || 'Aria'
+  const location = config?.business?.location || ''
+  const template =
+    config?.voice?.greeting_template ||
+    "Hello! Welcome to {business_name}. I'm {agent_name}. How can I help you today?"
+  return template
+    .replace(/\{business_name\}/g, biz)
+    .replace(/\{agent_name\}/g, agent)
+    .replace(/\{location\}/g, location)
+    .replace(/[*_>#`]/g, '') // strip any stray markdown so it isn't read aloud
+    .trim()
+}
+
+// Auditions a voice by speaking the (resolved) greeting in the selected voice.
+// Re-fetches whenever the chosen voice changes, so each dropdown pick is hearable.
+function GreetingVoicePreview({ text, voice }) {
+  const [playing, setPlaying] = useState(false)
+  const [loading, setLoading] = useState(false)
+  const audioRef = useRef(null)
+
+  // Stop any in-flight playback if the voice/text changes underneath us.
+  useEffect(() => {
+    return () => { audioRef.current?.pause(); audioRef.current = null }
+  }, [voice, text])
+
+  const toggle = async () => {
+    if (playing) {
+      audioRef.current?.pause()
+      audioRef.current = null
+      setPlaying(false)
+      return
+    }
+    setLoading(true)
+    try {
+      const params = new URLSearchParams({ text, voice })
+      const res = await fetch(`/api/v1/tts-preview?${params}`)
+      if (!res.ok) throw new Error('TTS failed')
+      const url = URL.createObjectURL(await res.blob())
+      const audio = new Audio(url)
+      audioRef.current = audio
+      audio.onended = () => { setPlaying(false); URL.revokeObjectURL(url) }
+      audio.play()
+      setPlaying(true)
+    } catch {
+      setPlaying(false)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  return (
+    <div className="mt-1">
+      <button
+        type="button"
+        onClick={toggle}
+        disabled={loading || !text}
+        className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-emerald-600 text-white text-xs font-medium hover:bg-emerald-700 disabled:opacity-50 transition-all"
+      >
+        {loading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : playing ? <Square className="w-3.5 h-3.5" /> : <Play className="w-3.5 h-3.5" />}
+        {loading ? 'Generating…' : playing ? 'Stop' : 'Preview greeting in this voice'}
+      </button>
+      <p className="mt-1.5 text-[11px] text-gray-400 italic leading-relaxed">"{text}"</p>
     </div>
   )
 }
@@ -129,7 +201,7 @@ export default function ProfilePage() {
         agent_name: config.voice?.agent_name || 'Aria',
         agent_personality: config.voice?.agent_personality || '',
         greeting_template: config.voice?.greeting_template || '',
-        tts_voice: config.voice?.tts_voice || 'aura-asteria-en',
+        tts_voice: config.voice?.tts_voice || DEFAULT_VOICE,
         system_prompt_template: config.system_prompt_template || '',
       })
       setSaveSuccess(true)
@@ -327,15 +399,13 @@ export default function ProfilePage() {
                   <FormField label="Greeting Template" value={config.voice?.greeting_template} onChange={(v) => updateField('voice.greeting_template', v)} textarea placeholder="Hello, welcome to {business_name}, I'm {agent_name}..." />
                   <SelectField
                     label="TTS Voice"
-                    value={config.voice?.tts_voice}
+                    value={config.voice?.tts_voice || DEFAULT_VOICE}
                     onChange={(v) => updateField('voice.tts_voice', v)}
-                    options={[
-                      { value: 'aura-asteria-en', label: 'Asteria (Female, warm)' },
-                      { value: 'aura-luna-en', label: 'Luna (Female, soft)' },
-                      { value: 'aura-orion-en', label: 'Orion (Male, confident)' },
-                      { value: 'aura-arcas-en', label: 'Arcas (Male, deep)' },
-                      { value: 'aura-stella-en', label: 'Stella (Female, bright)' },
-                    ]}
+                    options={VOICE_OPTIONS}
+                  />
+                  <GreetingVoicePreview
+                    text={resolveGreeting(config)}
+                    voice={config.voice?.tts_voice || DEFAULT_VOICE}
                   />
                 </div>
 

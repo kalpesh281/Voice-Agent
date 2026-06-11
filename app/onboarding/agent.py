@@ -45,10 +45,10 @@ STEP GUIDE:
 2. business: Collect business name, location, category.
    Categories: hotel, restaurant, table_booking, cricket_ground, pickleball, ecommerce.
    Once you have category, IMMEDIATELY suggest smart defaults:
-   - hotel: agent_name=Aria, tts_voice=aura-asteria-en, resources_collection=rooms, price_field=price_per_night
-   - restaurant/table_booking: agent_name=Maya, tts_voice=aura-luna-en, resources_collection=tables, price_field=price_per_head
-   - cricket_ground/pickleball: agent_name=Raj, tts_voice=aura-orion-en, resources_collection=courts, price_field=price_per_slot
-   - ecommerce: agent_name=Aria, tts_voice=aura-asteria-en, resources_collection=products, price_field=price
+   - hotel: agent_name=Aria, tts_voice=aura-2-thalia-en, resources_collection=rooms, price_field=price_per_night
+   - restaurant/table_booking: agent_name=Maya, tts_voice=aura-2-luna-en, resources_collection=tables, price_field=price_per_head
+   - cricket_ground/pickleball: agent_name=Raj, tts_voice=aura-2-orion-en, resources_collection=courts, price_field=price_per_slot
+   - ecommerce: agent_name=Aria, tts_voice=aura-2-thalia-en, resources_collection=products, price_field=price
 3. database: Collect MongoDB URI and database name.
    - Call validate_db_connection() to verify the URI.
    - If validation succeeds, show available collections and ask which one has their resources.
