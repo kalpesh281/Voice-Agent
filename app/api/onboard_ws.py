@@ -15,7 +15,7 @@ from langchain_core.messages import AIMessage, HumanMessage
 
 from app.config import settings
 from app.db.repositories.user_repo import UserRepository
-from app.onboarding.agent import build_onboarding_graph, strip_meta, _clean_value, _clean_greeting
+from app.onboarding.agent import build_onboarding_graph, strip_meta, _clean_value, _clean_greeting, extract_text_content, extract_meta_json
 from app.onboarding.tools import save_client_config
 from app.utils.session import COOKIE_NAME, verify_session
 
@@ -64,10 +64,10 @@ def _scan_meta_blocks(messages: list) -> dict:
     for msg in messages:
         if not (hasattr(msg, "type") and msg.type == "ai" and msg.content):
             continue
-        m = re.search(r"<meta>\s*(\{.*?\})\s*</meta>", msg.content, re.DOTALL)
-        if not m:
+        text_content = extract_text_content(msg.content)
+        raw = extract_meta_json(text_content)
+        if not raw:
             continue
-        raw = m.group(1)
         try:
             meta = json.loads(raw)
         except json.JSONDecodeError:
@@ -88,7 +88,7 @@ def _scan_prose(messages: list) -> dict:
     for msg in messages:
         if not (hasattr(msg, "type") and msg.type == "ai" and msg.content):
             continue
-        content = msg.content.strip()
+        content = extract_text_content(msg.content).strip()
         lower = content.lower()
 
         # **Field:** value  or  - Field: value
@@ -141,7 +141,7 @@ def _extract_from_exchange(messages: list) -> dict:
         if not (hasattr(msg, "type") and msg.type == "human" and msg.content):
             continue
 
-        reply = msg.content.strip().strip('"').strip("'")
+        reply = extract_text_content(msg.content).strip().strip('"').strip("'")
         if not reply or len(reply) > 400:
             continue
 
@@ -439,14 +439,19 @@ async def onboard_websocket_endpoint(websocket: WebSocket, session_id: str):
                     for msg in reversed(messages):
                         if hasattr(msg, "name") and msg.name == "save_client_config":
                             try:
-                                tool_result = json.loads(msg.content)
+                                if isinstance(msg.content, str):
+                                    tool_result = json.loads(msg.content)
+                                elif isinstance(msg.content, dict):
+                                    tool_result = msg.content
+                                else:
+                                    tool_result = {}
                                 if tool_result.get("success"):
                                     await websocket.send_json({
                                         "type": "complete",
                                         "client_id": tool_result.get("client_id", ""),
                                     })
                                     return
-                            except (json.JSONDecodeError, AttributeError):
+                            except Exception:
                                 pass
                             break  # Only check the most recent save attempt
 

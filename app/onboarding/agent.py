@@ -127,12 +127,52 @@ def _clean_greeting(value: str) -> str:
     return value.strip()
 
 
-def _parse_meta(content: str) -> tuple[str | None, dict]:
+def extract_text_content(content) -> str:
+    """Extract string content from possibly structured LLM message content (list of dicts)."""
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        texts = []
+        for part in content:
+            if isinstance(part, dict) and part.get("type") == "text":
+                texts.append(part.get("text", ""))
+            elif isinstance(part, str):
+                texts.append(part)
+        return "".join(texts)
+    return str(content) if content else ""
+
+
+def extract_meta_json(text: str) -> str | None:
+    """Extract raw JSON string from a <meta> block or raw JSON structure in text."""
+    # Try with <meta> tags first
+    match = re.search(r'<meta>\s*(\{.*?\})\s*</meta>', text, re.DOTALL)
+    if match:
+        return match.group(1)
+
+    # Fallback: find any JSON-like block containing next_step and updates
+    idx = text.find('{')
+    while idx != -1:
+        substring = text[idx:]
+        last_brace = substring.rfind('}')
+        if last_brace != -1:
+            candidate = substring[:last_brace+1]
+            if '"next_step"' in candidate and '"updates"' in candidate:
+                try:
+                    json.loads(candidate)
+                    return candidate
+                except json.JSONDecodeError:
+                    pass
+        idx = text.find('{', idx + 1)
+
+    return None
+
+
+def _parse_meta(content) -> tuple[str | None, dict]:
     """Extract <meta> block from LLM response. Returns (next_step, updates)."""
-    match = re.search(r'<meta>\s*(\{.*?\})\s*</meta>', content, re.DOTALL)
-    if not match:
+    text = extract_text_content(content)
+    raw = extract_meta_json(text)
+    if not raw:
         return None, {}
-    raw = match.group(1)
     try:
         meta = json.loads(raw)
     except json.JSONDecodeError:
@@ -152,9 +192,29 @@ def _parse_meta(content: str) -> tuple[str | None, dict]:
     return next_step, updates
 
 
-def strip_meta(text: str) -> str:
-    """Remove <meta>...</meta> block from text for frontend display."""
-    return re.sub(r'\s*<meta>.*?</meta>', '', text, flags=re.DOTALL).strip()
+def strip_meta(text) -> str:
+    """Remove <meta>...</meta> block or raw meta JSON from text for frontend display."""
+    raw_text = extract_text_content(text)
+    # 1. Remove <meta>...</meta>
+    cleaned = re.sub(r'\s*<meta>.*?</meta>', '', raw_text, flags=re.DOTALL).strip()
+
+    # 2. Try to find and remove any raw JSON block containing next_step and updates
+    idx = cleaned.find('{')
+    while idx != -1:
+        substring = cleaned[idx:]
+        last_brace = substring.rfind('}')
+        if last_brace != -1:
+            candidate = substring[:last_brace+1]
+            if '"next_step"' in candidate and '"updates"' in candidate:
+                try:
+                    json.loads(candidate)
+                    cleaned = cleaned[:idx] + cleaned[idx+last_brace+1:]
+                    break
+                except json.JSONDecodeError:
+                    pass
+        idx = cleaned.find('{', idx + 1)
+
+    return cleaned.strip()
 
 
 def build_onboarding_graph(user: ClientUser, app_settings: Settings):

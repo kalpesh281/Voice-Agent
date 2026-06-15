@@ -51,6 +51,7 @@ export default function useOnboardingSocket(sessionId) {
             break
 
           case 'complete':
+            intentionalClose.current = true
             dispatch(setComplete(msg.client_id))
             break
 

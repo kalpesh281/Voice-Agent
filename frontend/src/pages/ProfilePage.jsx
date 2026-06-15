@@ -141,6 +141,7 @@ export default function ProfilePage() {
   const [deleteConfirm, setDeleteConfirm] = useState('')
 
   const clientId = user?.client_id
+  const confirmText = config?.business?.name || user?.email || 'DELETE'
 
   // Load client config
   useEffect(() => {
@@ -569,14 +570,14 @@ export default function ProfilePage() {
                     Your bookings in your hotel database will be preserved.
                   </p>
                   <FormField
-                    label={`Type "${config?.business?.name}" to confirm`}
+                    label={`Type "${confirmText}" to confirm`}
                     value={deleteConfirm}
                     onChange={setDeleteConfirm}
-                    placeholder={config?.business?.name}
+                    placeholder={confirmText}
                   />
                   <button
                     onClick={handleDeleteAccount}
-                    disabled={deleteConfirm !== config?.business?.name}
+                    disabled={deleteConfirm !== confirmText}
                     className="mt-4 px-5 py-2.5 rounded-xl text-sm font-semibold bg-red-600 text-white hover:bg-red-700 disabled:opacity-30 transition-all cursor-pointer"
                   >
                     Delete my account

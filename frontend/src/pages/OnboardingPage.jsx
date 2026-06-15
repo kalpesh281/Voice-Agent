@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useSelector, useDispatch } from 'react-redux'
 import { useNavigate } from 'react-router-dom'
-import { Send, Radio, Loader2, CheckCircle2, Sparkles, Play, Square, Rocket, Edit3 } from 'lucide-react'
+import { Send, Radio, Loader2, CheckCircle2, Sparkles, Play, Square, Rocket, Edit3, XCircle } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import { setSessionId, resetOnboarding, setConfirmError } from '../features/onboarding/onboardSlice'
 import { fetchMe } from '../features/auth/authSlice'
@@ -84,7 +84,7 @@ const REVIEW_FIELDS = [
 ]
 
 function ReviewCard({ config, onChange }) {
-  const set = (key, val) => onChange(prev => ({ ...prev, [key]: val }))
+  const set = (key, val) => onChange(prev => ({ ...(prev || config), [key]: val }))
 
   return (
     <motion.div
@@ -145,7 +145,7 @@ function ReviewCard({ config, onChange }) {
 export default function OnboardingPage() {
   const dispatch = useDispatch()
   const navigate = useNavigate()
-  const { messages, sessionId, status, collectedConfig, isReviewMode, confirmError } = useSelector(s => s.onboard)
+  const { messages, sessionId, status, collectedConfig, isReviewMode, confirmError, error } = useSelector(s => s.onboard)
   const user = useSelector((s) => s.auth.user)
 
   const [input, setInput] = useState('')
@@ -185,10 +185,8 @@ export default function OnboardingPage() {
   }
 
   // Auto-connect once when session ID is ready
-  const hasConnected = useRef(false)
   useEffect(() => {
-    if (sessionId && !hasConnected.current) {
-      hasConnected.current = true
+    if (sessionId) {
       connect()
     }
     return () => disconnect()
@@ -216,6 +214,13 @@ export default function OnboardingPage() {
     }
   }, [status, dispatch, navigate])
 
+  // Redirect to dashboard if already onboarded
+  useEffect(() => {
+    if (user?.onboarding_complete) {
+      navigate('/dashboard', { replace: true })
+    }
+  }, [user, navigate])
+
   const handleSend = () => {
     const text = input.trim()
     if (!text || waiting) return
@@ -234,12 +239,19 @@ export default function OnboardingPage() {
       setWaiting(false)
       if (last.role === 'agent') inputRef.current?.focus()
     }
-  }, [messages.length])
+  }, [messages])
+
+  // Explicitly clear waiting state when review mode is activated
+  useEffect(() => {
+    if (isReviewMode) {
+      setWaiting(false)
+    }
+  }, [isReviewMode])
 
   useEffect(() => {
-    if (status === 'error') {
+    if (status === 'error' || status === 'complete') {
       setWaiting(false)
-      setConfirming(false)  // socket dropped mid-launch — don't leave the button spinning
+      setConfirming(false)  // socket dropped/completed mid-launch — don't leave the button spinning
     }
   }, [status])
 
@@ -339,7 +351,7 @@ export default function OnboardingPage() {
             </AnimatePresence>
 
             {/* Typing indicator when waiting for agent */}
-            {waiting && (
+            {!isReviewMode && waiting && (
               <div className="flex justify-start">
                 <div className="bg-emerald-50 border border-emerald-100 rounded-2xl px-4 py-3 flex items-center gap-1.5">
                   <div className="w-2 h-2 rounded-full bg-emerald-400 animate-bounce" style={{ animationDelay: '0ms' }} />
@@ -360,6 +372,30 @@ export default function OnboardingPage() {
                   <CheckCircle2 className="w-12 h-12 text-emerald-500 mx-auto mb-3" />
                   <h3 className="text-lg font-bold text-gray-900 mb-1">You're all set!</h3>
                   <p className="text-sm text-gray-500">Redirecting to your dashboard...</p>
+                </div>
+              </motion.div>
+            )}
+
+            {/* Connection error */}
+            {status === 'error' && (
+              <motion.div
+                initial={{ opacity: 0, scale: 0.95 }}
+                animate={{ opacity: 1, scale: 1 }}
+                className="flex justify-center py-8"
+              >
+                <div className="text-center max-w-sm px-6 py-5 rounded-2xl border border-red-200 bg-red-50/30">
+                  <XCircle className="w-12 h-12 text-red-500 mx-auto mb-3" />
+                  <h3 className="text-sm font-bold text-gray-900 mb-1">Connection Error</h3>
+                  <p className="text-xs text-gray-500 mb-4">{confirmError || error || 'Failed to connect to the onboarding server.'}</p>
+                  <button
+                    onClick={() => {
+                      dispatch(resetOnboarding())
+                      window.location.reload()
+                    }}
+                    className="px-4 py-2 rounded-xl bg-red-600 hover:bg-red-700 text-white text-xs font-semibold shadow-sm transition-all cursor-pointer"
+                  >
+                    Retry Setup
+                  </button>
                 </div>
               </motion.div>
             )}
